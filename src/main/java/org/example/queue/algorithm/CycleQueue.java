@@ -32,13 +32,13 @@ public class CycleQueue {
         return false;
     }
     //入队
-    public boolean enQueue(Patient patient){
-        if(isFull()) return false;
-        patients[rear] = patient;
-        rear = (rear+1)%maxLength;
-        length++;
-        return true;
-    }
+//    public boolean enQueue(Patient patient){
+//        if(isFull()) return false;
+//        patients[rear] = patient;
+//        rear = (rear+1)%maxLength;
+//        length++;
+//        return true;
+//    }
     //出队
     public Patient deQueue(){
         if(isEmpty()) return null;
@@ -47,7 +47,7 @@ public class CycleQueue {
         length--;
         return result;
     }
-    //插队
+    //按序入队
     public boolean insertPriority(Patient patient){
         if(isFull()) return false;
         int priority = patient.getPriority();
