@@ -11,6 +11,7 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Arrays;
 import java.util.List;
 
 public class EmergencyScheduler {
@@ -19,6 +20,11 @@ public class EmergencyScheduler {
     @Value("classpath:patient.txt")
     private Resource resource;
     //txt加载进来，把所有患者信息加入队列
+
+    public EmergencyScheduler(CycleQueue queue) {
+        this.queue = queue;
+    }
+
     public void loadFromFile(String filePath) throws IOException {
         //加载txt
         List<String> lines;
@@ -50,6 +56,7 @@ public class EmergencyScheduler {
         }
 
     }
+    //拿等待时间
     public void timeStep() {
         int waitTime = 0;
         int id = queue.getFront();
@@ -59,7 +66,7 @@ public class EmergencyScheduler {
             id = (id + 1) % queue.getMaxLength();
         }
     }
-
+    //问诊了一个之后更新数据
     public Patient treatNext(){
         Patient patient = queue.deQueue();
         timeStep();
@@ -74,13 +81,16 @@ public class EmergencyScheduler {
         }
         return avgWaitTime/queue.getLength();
     }
+    //返回循环队列的状态
     public QueueMessage getQueueStatus(){
         QueueMessage queueMessage = new QueueMessage();
         queueMessage.setFront(queue.getFront());
         queueMessage.setRear(queue.getRear());
         queueMessage.setAvgTime(getAvgWaitTime());
+        queueMessage.setPatientList(Arrays.asList(queue.getPatients()));
         return queueMessage;
     }
+    //重置
     public void reset(){
         queue.clear();
     }
