@@ -1,5 +1,7 @@
-package org.example.queue.algorithm;
+package org.example.queue.service;
 
+import org.example.queue.algorithm.CycleQueue;
+import org.example.queue.algorithm.MaxHeap;
 import org.example.queue.entity.QueueMessage;
 import org.springframework.core.io.Resource;
 import org.example.queue.entity.Patient;
@@ -14,48 +16,51 @@ import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.List;
 
-public class EmergencyScheduler {
+public class EmergencyService {
     private CycleQueue queue;
     //获取resource文件下的patient.txt文件
     @Value("classpath:patient.txt")
     private Resource resource;
     //txt加载进来，把所有患者信息加入队列
-
-    public EmergencyScheduler(CycleQueue queue) {
+    private List<String> lines;
+    private int idx = 0;
+    public EmergencyService(CycleQueue queue) {
         this.queue = queue;
     }
 
     public void loadFromFile(String filePath) throws IOException {
         //加载txt
-        List<String> lines;
         try (BufferedReader br = new BufferedReader(new InputStreamReader(resource.getInputStream(), StandardCharsets.UTF_8))) {
             lines = br.lines()
                     .map(String::trim)
                     .filter(s -> !s.isEmpty())
                     .toList();
         }
-        //进队列
         queue = new CycleQueue(lines.size());
-        for (int i = 0; i < lines.size(); i++) {
-            String[] strings = lines.get(i).split("\\s+");
-            DateTimeFormatter fmt = DateTimeFormatter.ofPattern("HH:mm");
-
-            Patient patient = new Patient(Integer.parseInt(strings[0]),null,
-                    LocalTime.parse(strings[2]),Integer.parseInt(strings[4]),
-                            Integer.parseInt(strings[6]),0);
-            //错误处理
-            if(!queue.insertPriority(patient)){
-                CycleQueue tmp = queue;
-                queue = new CycleQueue(tmp.getMaxLength()+10);
-                queue.setFront(tmp.getFront());
-                queue.setRear(tmp.getRear());
-                queue.setLength(tmp.getLength());
-                queue.setPatients(tmp.getPatients());
-                queue.insertPriority(patient);
-            }
-        }
-
     }
+
+    public QueueMessage addQueue(){
+        //进队列
+        String[] strings = lines.get(idx).split("\\s+");
+        DateTimeFormatter fmt = DateTimeFormatter.ofPattern("HH:mm");
+
+        Patient patient = new Patient(Integer.parseInt(strings[0]),null,
+                LocalTime.parse(strings[2]),Integer.parseInt(strings[4]),
+                Integer.parseInt(strings[6]),0);
+        //错误处理
+        if(!queue.insertPriority(patient)){
+            CycleQueue tmp = queue;
+            queue = new CycleQueue(tmp.getMaxLength()+10);
+            queue.setFront(tmp.getFront());
+            queue.setRear(tmp.getRear());
+            queue.setLength(tmp.getLength());
+            queue.setPatients(tmp.getPatients());
+            queue.insertPriority(patient);
+        }
+        idx++;
+        return getQueueStatus();
+    }
+
     //拿等待时间
     public void timeStep() {
         int waitTime = 0;
@@ -93,5 +98,13 @@ public class EmergencyScheduler {
     //重置
     public void reset(){
         queue.clear();
+    }
+
+    //大根堆排序
+    public Patient[] heapSort(){
+        timeStep();
+        MaxHeap maxHeap = new MaxHeap(queue);
+        maxHeap.heapSort();
+        return maxHeap.getMaxHeap();
     }
 }

@@ -10,7 +10,7 @@ public class MaxHeap {
     private Patient[] maxHeap;
     public MaxHeap(CycleQueue cycleQueue) {
         change(cycleQueue);
-        buildMaxHeap(maxHeap);
+        buildMaxHeap();
     }
     //令循环队列变成正常的队列
     public void change(CycleQueue cycleQueue) {
@@ -24,45 +24,45 @@ public class MaxHeap {
         }
     }
     //创建大根堆
-    public void buildMaxHeap(Patient[] maxHeap){
+    public void buildMaxHeap(){
         int n = maxHeap.length;
         for(int i=(n-2)/2;i>=0;i--) {
-            shiftDown(maxHeap,n,i);
+            shiftDown(n,i);
         }
     }
     //把大的放上去
-    private void shiftDown(Patient[] patients, int n, int i) {
+    private void shiftDown( int n, int i) {
         while (true){
             int leftChild = 2*i+1;
             int rightChild = 2*i+2;
             if(leftChild>n-1) break;
             int large = i;
-            if(patients[leftChild].getWaitTime()>patients[large].getWaitTime()){
+            if(maxHeap[leftChild].getWaitTime()>maxHeap[large].getWaitTime()){
                 large = leftChild;
             }
-            if(patients[rightChild].getWaitTime()>patients[large].getWaitTime()&&rightChild<n){
+            if(maxHeap[rightChild].getWaitTime()>maxHeap[large].getWaitTime()&&rightChild<n){
                 large = rightChild;
             }
             if(large == i) {
                 break;
             }else {
-                swap(patients,large,i);
+                swap(large,i);
                 i = large;
             }
 
         }
     }
     //交换
-    private void swap(Patient[] patients, int i, int j) {
-        Patient temp = patients[i];
-        patients[i] = patients[j];
-        patients[j] = temp;
+    private void swap( int i, int j) {
+        Patient temp = maxHeap[i];
+        maxHeap[i] = maxHeap[j];
+        maxHeap[j] = temp;
     }
     //堆排序，升序
-    public void heapSort(Patient[] patients){
-        for(int i=0;i<patients.length-1;i++){
-            swap(patients,0,patients.length-i-1);
-            shiftDown(patients,patients.length-i-1,0);
+    public void heapSort(){
+        for(int i=0;i<maxHeap.length-1;i++){
+            swap(0,maxHeap.length-i-1);
+            shiftDown(maxHeap.length-i-1,0);
         }
     }
 
