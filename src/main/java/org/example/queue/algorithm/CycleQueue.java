@@ -85,4 +85,24 @@ public class CycleQueue {
         length = 0;
     }
 
+    //去除中间某一个患者
+    public void remove(int id){
+        int i = front;
+        boolean flag = false;
+        while(i!=rear){
+            if(patients[i].getId()==id){
+                i = (i+1)%maxLength;
+                while(i!=rear){
+                    patients[(i-1)%maxLength]=patients[i];
+                    i = (i+1)%maxLength;
+                    flag = true;
+                }
+            }
+            if(flag){
+                break;
+            }
+            i =  (i+1)%maxLength;
+        }
+    }
+
 }

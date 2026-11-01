@@ -58,6 +58,8 @@ public class EmergencyService {
             queue.insertPriority(patient);
         }
         idx++;
+        timeStep();
+        getAvgWaitTime();
         return getQueueStatus();
     }
 
@@ -75,11 +77,13 @@ public class EmergencyService {
     public Patient treatNext(){
         Patient patient = queue.deQueue();
         timeStep();
+        getAvgWaitTime();
         return patient;
     }
 
     //拿平均等待时间
     public double getAvgWaitTime(){
+        timeStep();
         double avgWaitTime = 0;
         for (int i = 0; i < queue.getLength(); i++) {
             avgWaitTime+=queue.getPatients()[i].getWaitTime();
@@ -106,5 +110,12 @@ public class EmergencyService {
         MaxHeap maxHeap = new MaxHeap(queue);
         maxHeap.heapSort();
         return maxHeap.getMaxHeap();
+    }
+    //放弃排队
+    public QueueMessage giveUp(int id){
+        queue.remove(id);
+        timeStep();
+        getAvgWaitTime();
+        return getQueueStatus();
     }
 }

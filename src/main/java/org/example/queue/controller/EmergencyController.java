@@ -58,4 +58,11 @@ public class EmergencyController {
         return emergencyService.getQueueStatus();
     }
 
+    //患者不排了
+    @GetMapping("/remove")
+    public QueueMessage removePatients(int id){
+        emergencyService.giveUp(id);
+        return emergencyService.getQueueStatus();
+    }
+
 }
