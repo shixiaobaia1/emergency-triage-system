@@ -31,3 +31,11 @@ build/
 
 ### VS Code ###
 .vscode/
+/classpath.txt
+/src/main/java/org/example/queue/config/GlobalExceptionHandler.java
+/src/main/java/org/example/queue/service/HeapService.java
+/src/main/java/org/example/queue/vo/PatientVO.java
+/src/main/java/org/example/queue/service/QueueService.java
+/src/main/java/org/example/queue/vo/QueueStatusVO.java
+/src/main/java/org/example/queue/vo/Result.java
+/sources.txt

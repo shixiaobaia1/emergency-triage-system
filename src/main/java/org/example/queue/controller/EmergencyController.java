@@ -1,68 +1,88 @@
 package org.example.queue.controller;
 
-import jakarta.annotation.Resource;
-import org.example.queue.entity.Patient;
-import org.example.queue.entity.QueueMessage;
-import org.example.queue.service.EmergencyService;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.example.queue.service.HeapService;
+import org.example.queue.service.QueueService;
+import org.example.queue.vo.PatientVO;
+import org.example.queue.vo.QueueStatusVO;
+import org.example.queue.vo.Result;
+import org.springframework.web.bind.annotation.*;
 
 import java.io.IOException;
 
+/**
+ * 急诊分诊系统 Controller——RESTful 风格
+ * FIX: 职责拆分后，分别注入 QueueService（第一阶段）和 HeapService（第二阶段）
+ * FIX: 所有接口返回 Result<T> 统一响应包装，内部只返回 VO 不返回 Entity
+ */
 @RestController
 @RequestMapping("/queue")
 public class EmergencyController {
-    @Resource
-    private EmergencyService emergencyService;
 
-    //加载txt
+    private final QueueService queueService;
+    private final HeapService heapService;
+
+    // FIX: 构造器注入（Spring 推荐方式，比 @Resource 更清晰）
+    public EmergencyController(QueueService queueService, HeapService heapService) {
+        this.queueService = queueService;
+        this.heapService = heapService;
+    }
+
+    // ========== 第一阶段：循环队列调度 ==========
+
+    /** 加载 patients.txt 数据到内存（不直接入队） */
     @GetMapping("/load")
-    public QueueMessage load() throws IOException {
-        emergencyService.loadFromFile("patients.txt");
-        return emergencyService.getQueueStatus();
+    public Result<QueueStatusVO> load() throws IOException {
+        queueService.loadFromFile();
+        return Result.success(queueService.getStatus());
     }
-    //拿信息
+
+    /** 获取队列当前状态 */
     @GetMapping("/status")
-    public QueueMessage getStatus() throws IOException {
-        return emergencyService.getQueueStatus();
+    public Result<QueueStatusVO> getStatus() {
+        return Result.success(queueService.getStatus());
     }
-    //加人进队列
+
+    /** 从 txt 加载下一个患者入队（按优先级插入） */
     @PostMapping("/add")
-    public QueueMessage addPatients(){
-        emergencyService.addQueue();
-        return emergencyService.getQueueStatus();
+    public Result<QueueStatusVO> addOne() {
+
+        return Result.success(queueService.addOneFromFile());
     }
-    //拿平均值
+
+    /** 获取平均等待时间 */
     @GetMapping("/avg")
-    public double getAvgTime() throws IOException {
-        return emergencyService.getAvgWaitTime();
+    public Result<Double> getAvgTime() {
+
+        return Result.success(queueService.getAvgWaitTime());
     }
 
-    //治疗结束
+    /** 队首患者就诊结束，出队 */
     @GetMapping("/treat")
-    public QueueMessage treatPatients(){
-        emergencyService.treatNext();
-        return emergencyService.getQueueStatus();
+    public Result<QueueStatusVO> treatNext() {
+
+        return Result.success(queueService.treatNext());
     }
-    //大根堆排序
-    @GetMapping("/sort")
-    public Patient[] sort(){
-        return emergencyService.heapSort();
-    }
-    //重置
+
+    /** 重置队列（清空所有患者，重置文件读取指针） */
     @GetMapping("/reset")
-    public QueueMessage reset(){
-        emergencyService.reset();
-        return emergencyService.getQueueStatus();
+    public Result<QueueStatusVO> reset() {
+
+        return Result.success(queueService.reset());
     }
 
-    //患者不排了
-    @GetMapping("/remove")
-    public QueueMessage removePatients(int id){
-        emergencyService.giveUp(id);
-        return emergencyService.getQueueStatus();
+    /** 患者放弃排队 */
+    // FIX: 用 @DeleteMapping 符合 REST 规范，@RequestParam 接收 query 参数
+    @DeleteMapping("/remove")
+    public Result<QueueStatusVO> removePatient(@RequestParam int id) {
+        return Result.success(queueService.giveUp(id));
     }
 
+    // ========== 第二阶段：大根堆排序 ==========
+
+    /** 第二阶段主功能：按等待时间做堆排序，返回有序患者数组 */
+    @GetMapping("/sort")
+    public Result<PatientVO[]> heapSort() {
+
+        return Result.success(heapService.heapSortByWaitTime());
+    }
 }
