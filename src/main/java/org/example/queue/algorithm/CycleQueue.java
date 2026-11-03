@@ -47,24 +47,35 @@ public class CycleQueue {
         return result;
     }
     //按优先级插入入队（优先级越小越紧急，插前面）
+    // FIX: 原实现空队列时 flag 越界到 null 槽、循环边界没限制搬移次数，全部重写
     public boolean insertPriority(Patient patient){
         if(isFull()) return false;
         int priority = patient.getPriority();
-        // FIX: Java负数取模还是负数，必须加maxLength再模
-        int flag = (rear - 1 + maxLength) % maxLength;
-        int num = 0;
-        length++;
-        rear = (rear + 1) % maxLength;
-        for(; num < length; num++) {
-            if(patients[flag].getPriority() > priority) {
-                // FIX: 用maxLength取模，不是length（元素个数）；同时注意负数取模安全
-                patients[(flag + 1) % maxLength] = patients[flag];
-                flag = (flag - 1 + maxLength) % maxLength;  // FIX: 负数取模安全
+
+        // 新的 rear 位置（先预留插入空间）
+        int newRear = (rear + 1) % maxLength;
+
+        // FIX: 从 rear-1 开始往前找插入点，同时把优先级更大的元素往后搬
+        //  最多搬 length 次（刚好是当前已有的元素数），不会越过已填充区域
+        int i = (rear - 1 + maxLength) % maxLength;
+        int moved = 0;
+        while(moved < length) {
+            // FIX: 只搬非 null 的、且优先级更大的；遇到 null 或不该搬的就停
+            if(patients[i] != null && patients[i].getPriority() > priority) {
+                // 把 patients[i] 往后搬一格：i → (i+1)%maxLength
+                patients[(i + 1) % maxLength] = patients[i];
+                i = (i - 1 + maxLength) % maxLength;  // 继续往前找
+                moved++;
             } else {
-                break;
+                break;  // 找到不该搬的，位置就是 i+1
             }
         }
-        patients[(flag + 1) % maxLength] = patient;  // FIX: 用maxLength取模
+
+        // FIX: 插入点在最后搬完的位置的后一格
+        int insertPos = (i + 1) % maxLength;
+        patients[insertPos] = patient;
+        rear = newRear;
+        length++;
         return true;
     }
     //拿所有患者的信息（按序）

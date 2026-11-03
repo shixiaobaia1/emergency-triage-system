@@ -128,12 +128,17 @@ public class QueueService {
         if(queue == null || queue.isEmpty()) return 0;
         timeStep();
         double sum = 0;
+        int validCount = 0;  // FIX: 用有效元素数算平均，不用 queue.getLength()（更安全）
         int i = queue.getFront();
         while(i != queue.getRear()) {
-            sum += queue.getPatients()[i].getWaitTime();
+            Patient p = queue.getPatients()[i];
+            if(p != null) {  // FIX: 跳过可能的 null 槽
+                sum += p.getWaitTime();
+                validCount++;
+            }
             i = (i + 1) % queue.getMaxLength();
         }
-        return sum / queue.getLength();
+        return validCount > 0 ? sum / validCount : 0;
     }
 
     // FIX: 暴露队列快照给 HeapService 构建大根堆用（返回 Entity 列表，VO 在 HeapService 转）
@@ -152,8 +157,13 @@ public class QueueService {
         int waitTime = 0;
         int id = queue.getFront();
         while(id != queue.getRear()) {
-            queue.getPatients()[id].setWaitTime(waitTime);
-            waitTime += queue.getPatients()[id].getTreatTime();  // FIX: treatTime 不是 proveTime
+            Patient p = queue.getPatients()[id];
+            if(p == null) {  // FIX: 防御性 null 检查，防止数组留空槽时 NPE
+                id = (id + 1) % queue.getMaxLength();
+                continue;
+            }
+            p.setWaitTime(waitTime);
+            waitTime += p.getTreatTime();
             id = (id + 1) % queue.getMaxLength();
         }
     }
