@@ -1,7 +1,10 @@
 package org.example.queue.algorithm;
 
+import lombok.Data;
 import org.example.queue.entity.Patient;
 
+// FIX: 加回 Lombok @Data，getMaxHeap()/setMaxHeap() 不再手写
+@Data
 public class MaxHeap {
     private Patient[] maxHeap;
     public MaxHeap(CycleQueue cycleQueue) {
@@ -63,12 +66,5 @@ public class MaxHeap {
             shiftDown(maxHeap.length - i - 1, 0);
         }
     }
-
-    public Patient[] getMaxHeap() {
-        return maxHeap;
-    }
-
-    public void setMaxHeap(Patient[] maxHeap) {
-        this.maxHeap = maxHeap;
-    }
+    // FIX: @Data 已自动生成 getMaxHeap()/setMaxHeap()，不再手写
 }

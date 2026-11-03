@@ -14,7 +14,6 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
-import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * 第一阶段核心服务：循环队列调度 + 患者等待时间计算
@@ -24,19 +23,24 @@ import java.util.concurrent.locks.ReentrantLock;
 @Service
 public class QueueService {
     private CycleQueue queue;
-    // FIX: 用 ReentrantLock 替代 synchronized，语义更清晰，后续如果需要 tryLock 等高级功能也方便
-    private final ReentrantLock lock = new ReentrantLock();
 
-    @Value("classpath:patients.txt")  // FIX: 保留 @Value 方式，按用户要求
+    // FIX: @Value 指向 static/patients.txt（你生成的 80 条格式数据文件）
+    @Value("classpath:static/patients.txt")
     private Resource resource;
 
     private List<String> lines;   // txt 文件全部行
     private int idx = 0;          // 当前读到第几行
 
+    // FIX: DateTimeFormatter 缓存，避免每次 toPatientVO 都 new 一个
+    private static final DateTimeFormatter HH_MM = DateTimeFormatter.ofPattern("HH:mm");
+    // FIX: Entity 的 int id → VO 的 String 编号（如 1 → "P001"）
+    private static final String ID_PREFIX = "P";
+    private static final int ID_DIGITS = 3;
+
     // FIX: 从 txt 加载 80 个患者数据到内存，但不直接入队（按需入队）
     public synchronized void loadFromFile() throws IOException {
         if(resource == null || !resource.exists()) {
-            throw new IOException("找不到患者数据文件 patients.txt");
+            throw new IOException("找不到患者数据文件 static/patients.txt");
         }
         try (BufferedReader br = new BufferedReader(
                 new InputStreamReader(resource.getInputStream(), StandardCharsets.UTF_8))) {
@@ -70,20 +74,25 @@ public class QueueService {
         return buildStatus();
     }
 
-    // FIX: 把一行 txt 解析成 Patient Entity（第一阶段：按到达时间顺序）
+    /**
+     * FIX: 把一行 txt 解析成 Patient Entity
+     * txt 格式：P001 到达 08:00 时长 15min 优先级 3
+     *  列索引:  s[0]    s[1] s[2]  s[3] s[4]  s[5]  s[6]    s[7]
+     * FIX: s[0] 是 "P001" 这种 String 编号，需要剥掉 "P" 前缀转成 int 存 Entity
+     */
     private Patient parseLine(String line) {
         String[] s = line.split("\\s+");
-        // 格式参考需求：P001 到达 08:00 时长 15min 优先级 3
-        return new Patient(
-                Integer.parseInt(s[0]),       // id (P001 → 1？不，直接用 s[0] 转 int 失败，存字符串id？)
-                null,
-                java.time.LocalTime.parse(s[2]),
-                Integer.parseInt(s[4]),       // treatTime
-                Integer.parseInt(s[6]),       // priority
-                0                              // waitTime 由 timeStep 计算
-        );
-        // FIXME: 如果 txt 里 id 是 P001 这种字母+数字，这里 Integer.parseInt 会报错
-        //  后续可以改成 String id，当前假设是纯数字或者调整 txt 格式
+        // FIX: "P001" → 剥掉 'P' → "001" → parseInt → 1
+        String rawId = s[0];
+        int numericId = Integer.parseInt(rawId.replace(ID_PREFIX, ""));
+
+        // "08:00" → LocalTime
+        java.time.LocalTime arrival = java.time.LocalTime.parse(s[2]);
+        // "15min" → 剥掉 "min" → parseInt → 15
+        int treatMin = Integer.parseInt(s[4].replace("min", ""));
+        int priority = Integer.parseInt(s[6]);
+
+        return new Patient(numericId, null, arrival, treatMin, priority, 0);
     }
 
     // FIX: 队首患者就诊，出队
@@ -131,7 +140,7 @@ public class QueueService {
     public synchronized List<Patient> getAllPatientsSnapshot() {
         if(queue == null) return List.of();
         timeStep();
-        return queue.getAll();  // 已经是从 front 到 rear 的正确顺序
+        return queue.getAll();
     }
 
     // ===== 内部私有方法 =====
@@ -161,24 +170,30 @@ public class QueueService {
             vo.setPatientList(List.of());
             return vo;
         }
-        vo.setFront(queue.getFront());  // FIX: 补上 front 指针
-        vo.setRear(queue.getRear());    // FIX: 补上 rear 指针
+        vo.setFront(queue.getFront());
+        vo.setRear(queue.getRear());
         vo.setQueueSize(queue.getLength());
-        vo.setCapacity(queue.getMaxLength() - 1);  // 牺牲一个存储单元
+        vo.setCapacity(queue.getMaxLength() - 1);
         vo.setAvgWaitTime(getAvgWaitTime());
         vo.setPatientList(queue.getAll().stream().map(this::toPatientVO).toList());
         return vo;
     }
 
-    // FIX: Patient Entity → PatientVO
+    // FIX: Patient Entity → PatientVO（Entity int id → VO "P001" 格式 String）
     private PatientVO toPatientVO(Patient p) {
         PatientVO v = new PatientVO();
-        v.setId(p.getId());
+        v.setId(formatId(p.getId()));  // FIX: 1 → "P001"
         v.setName(p.getName());
-        v.setArriveTime(p.getArriveTime().format(DateTimeFormatter.ofPattern("HH:mm")));
+        v.setArriveTime(p.getArriveTime().format(HH_MM));
         v.setTreatTime(p.getTreatTime());
         v.setPriority(p.getPriority());
         v.setWaitTime(p.getWaitTime());
         return v;
+    }
+
+    // FIX: Entity 的 int id → txt 文件中的 String 编号格式
+    //  如 1 → "P001"，42 → "P042"，80 → "P080"
+    public static String formatId(int numericId) {
+        return ID_PREFIX + String.format("%0" + ID_DIGITS + "d", numericId);
     }
 }

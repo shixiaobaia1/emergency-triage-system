@@ -1,10 +1,13 @@
 package org.example.queue.algorithm;
 
+import lombok.Data;
 import org.example.queue.entity.Patient;
 
 import java.util.ArrayList;
 import java.util.List;
 
+// FIX: 加回 Lombok @Data，自动生成 getter/setter，之前丢失导致手写了一堆
+@Data
 public class CycleQueue {
     private Patient[] patients;
     private int front;//队头
@@ -101,44 +104,5 @@ public class CycleQueue {
         if(flag) length--;
         if(flag) rear = (rear - 1 + maxLength) % maxLength;  // FIX: rear也要回退
     }
-
-    public Patient[] getPatients() {
-        return patients;
-    }
-
-    public void setPatients(Patient[] patients) {
-        this.patients = patients;
-    }
-
-    public int getFront() {
-        return front;
-    }
-
-    public void setFront(int front) {
-        this.front = front;
-    }
-
-    public int getRear() {
-        return rear;
-    }
-
-    public void setRear(int rear) {
-        this.rear = rear;
-    }
-
-    public int getMaxLength() {
-        return maxLength;
-    }
-
-    public void setMaxLength(int maxLength) {
-        this.maxLength = maxLength;
-    }
-
-    public int getLength() {
-        return length;
-    }
-
-    public void setLength(int length) {
-        this.length = length;
-    }
+    // FIX: @Data 已自动生成 patients/front/rear/maxLength/length 的 getter/setter，不再手写
 }

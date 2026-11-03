@@ -42,31 +42,28 @@ public class EmergencyController {
         return Result.success(queueService.getStatus());
     }
 
+    // FIX: 清掉方法签名和 return 之间的多余空行，之前有 5 处（addOne/getAvgTime/treatNext/reset/heapSort）
     /** 从 txt 加载下一个患者入队（按优先级插入） */
     @PostMapping("/add")
     public Result<QueueStatusVO> addOne() {
-
         return Result.success(queueService.addOneFromFile());
     }
 
     /** 获取平均等待时间 */
     @GetMapping("/avg")
     public Result<Double> getAvgTime() {
-
         return Result.success(queueService.getAvgWaitTime());
     }
 
     /** 队首患者就诊结束，出队 */
     @GetMapping("/treat")
     public Result<QueueStatusVO> treatNext() {
-
         return Result.success(queueService.treatNext());
     }
 
     /** 重置队列（清空所有患者，重置文件读取指针） */
     @GetMapping("/reset")
     public Result<QueueStatusVO> reset() {
-
         return Result.success(queueService.reset());
     }
 
@@ -79,10 +76,13 @@ public class EmergencyController {
 
     // ========== 第二阶段：大根堆排序 ==========
 
-    /** 第二阶段主功能：按等待时间做堆排序，返回有序患者数组 */
+    /**
+     * 第二阶段主功能：按等待时间做堆排序，返回有序患者数组
+     * FIX: ID 转换链路——QueueService 里 Patient Entity 存 int id（从 "P001" 剥 P 解析），
+     *      HeapService.toVO 里复用 QueueService.formatId() 转回 "P001" 格式 String 返回给前端
+     */
     @GetMapping("/sort")
     public Result<PatientVO[]> heapSort() {
-
         return Result.success(heapService.heapSortByWaitTime());
     }
 }

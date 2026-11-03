@@ -19,6 +19,9 @@ public class HeapService {
 
     private final QueueService queueService;
 
+    // FIX: DateTimeFormatter 缓存，避免每次 toVO 都 new 一个
+    private static final DateTimeFormatter HH_MM = DateTimeFormatter.ofPattern("HH:mm");
+
     // FIX: 构造器注入（比 @Autowired 更推荐，Spring 官方也推荐）
     public HeapService(QueueService queueService) {
         this.queueService = queueService;
@@ -52,12 +55,12 @@ public class HeapService {
         return result;
     }
 
-    // FIX: Patient Entity → PatientVO（统一在 Service 层做转换，Controller 不碰 Entity）
+    // FIX: Patient Entity → PatientVO（Entity int id → VO "P001" 格式 String，和 QueueService 统一）
     private PatientVO toVO(Patient p) {
         PatientVO v = new PatientVO();
-        v.setId(p.getId());
+        v.setId(QueueService.formatId(p.getId()));  // FIX: 1 → "P001"，复用 QueueService 的格式化逻辑
         v.setName(p.getName());
-        v.setArriveTime(p.getArriveTime().format(DateTimeFormatter.ofPattern("HH:mm")));  // FIX: LocalTime → String 方便前端展示
+        v.setArriveTime(p.getArriveTime().format(HH_MM));  // FIX: DateTimeFormatter 缓存
         v.setTreatTime(p.getTreatTime());
         v.setPriority(p.getPriority());
         v.setWaitTime(p.getWaitTime());
