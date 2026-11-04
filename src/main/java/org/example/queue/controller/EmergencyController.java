@@ -1,5 +1,8 @@
 package org.example.queue.controller;
 
+import org.example.queue.context.UserContext;
+import org.example.queue.entity.Role;
+import org.example.queue.entity.User;
 import org.example.queue.service.HeapService;
 import org.example.queue.service.QueueService;
 import org.example.queue.vo.PatientVO;
@@ -62,15 +65,22 @@ public class EmergencyController {
     }
 
     /** 重置队列（清空所有患者，重置文件读取指针） */
+    // FIX: 医生不能调用 reset，只有 ADMIN 可以
     @GetMapping("/reset")
     public Result<QueueStatusVO> reset() {
+        if(!isAdmin()) {
+            return Result.fail(403, "医生角色无权执行 reset 操作");
+        }
         return Result.success(queueService.reset());
     }
 
     /** 患者放弃排队 */
-    // FIX: 用 @DeleteMapping 符合 REST 规范，@RequestParam 接收 query 参数
+    // FIX: 医生不能调用 removePatient，只有 ADMIN 可以
     @DeleteMapping("/remove")
     public Result<QueueStatusVO> removePatient(@RequestParam int id) {
+        if(!isAdmin()) {
+            return Result.fail(403, "医生角色无权执行 remove 操作");
+        }
         return Result.success(queueService.giveUp(id));
     }
 
@@ -84,5 +94,13 @@ public class EmergencyController {
     @GetMapping("/sort")
     public Result<PatientVO[]> heapSort() {
         return Result.success(heapService.heapSortByWaitTime());
+    }
+
+    // ===== 权限辅助方法 =====
+
+    /** FIX: 判断当前登录用户是否是 ADMIN 角色 */
+    private boolean isAdmin() {
+        User user = UserContext.get();
+        return user != null && user.getRole() == Role.ADMIN;
     }
 }
