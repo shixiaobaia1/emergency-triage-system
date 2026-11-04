@@ -23,13 +23,17 @@ public class WebMvcConfig implements WebMvcConfigurer {
         this.authInterceptor = authInterceptor;
     }
 
-    /** 注册全局拦截器并设置拦截/放行范围 */
+    /**
+     * 注册全局拦截器并设置拦截/放行范围
+     * FIX: /login/logout 和 /login/current 不放行——它们也需要 token 校验
+     *  只有 POST /login 本身需要放行（登录前还没有 token）
+     */
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(authInterceptor)
                 .addPathPatterns("/**")           // 拦截所有 URI
                 .excludePathPatterns(
-                        "/login/**",           // 登录系列接口（放行）
+                        "/login",              // FIX: 精确匹配登录接口，不是 /login/**
                         "/error",              // Spring Boot 错误页
                         "/static/**",          // 静态资源（patients.txt 在这下面）
                         "/favicon.ico"

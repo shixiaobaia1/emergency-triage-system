@@ -9,6 +9,8 @@ import org.springframework.web.servlet.HandlerInterceptor;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
+import java.util.Map;
+
 /**
  * 全局鉴权拦截器——每个 /queue/** 请求进 Controller 之前都会先过这里
  * <p>
@@ -38,14 +40,17 @@ public class AuthInterceptor implements HandlerInterceptor {
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
         String uri = request.getRequestURI();
 
-        // 放行登录接口（不登录也要能调 /login）、错误页、静态资源
-        // 这些路径在 WebMvcConfig 里也配了 exclude，但双保险
-        if(uri.startsWith("/login") || uri.equals("/error")) {
+        // FIX: 只放行 POST /login（登录接口），不放行 /login/logout 和 /login/current
+        //  因为后两个也需要 token 校验——logout 要知道谁登出，current 要拿当前用户
+        //  精确匹配 "/login" 而不是 startsWith("/login")
+        if(uri.equals("/login") || uri.equals("/error") || uri.startsWith("/static")) {
             return true;
         }
 
         // 从请求头取 token（前端每次调接口要带 X-Token: xxx）
         String token = request.getHeader("X-Token");
+        // FIX: 加一行调试日志，确认 Apifox 到底有没有传 token 过来
+        System.out.println("[AuthInterceptor] uri=" + uri + " | X-Token=" + token + " | sessions大小=" + sessionsCount());
         User user = tokenUtil.getUser(token);
         if(user == null) {
             // token 不存在或已过期 → 直接返回 401 JSON，不进 Controller
@@ -67,5 +72,18 @@ public class AuthInterceptor implements HandlerInterceptor {
     @Override
     public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler, Exception ex) {
         UserContext.clear();
+    }
+
+    // FIX: 临时调试用——看看 TokenUtil 里当前有多少 session
+    private int sessionsCount() {
+        try {
+            // 反射拿 sessions map 的 size（TokenUtil 没暴露 size 方法，临时用）
+            java.lang.reflect.Field f = TokenUtil.class.getDeclaredField("sessions");
+            f.setAccessible(true);
+            Map<?, ?> m = (Map<?, ?>) f.get(tokenUtil);
+            return m.size();
+        } catch (Exception e) {
+            return -1;
+        }
     }
 }

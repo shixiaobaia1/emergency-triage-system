@@ -37,17 +37,20 @@ public class LoginController {
     }
 
     /**
-     * 登出接口
-     * 需要带 X-Token header
+     * 登出接口——必须带有效 token（拦截器已校验）
+     * FIX: 现在 /login/logout 不再被拦截器放行，token 无效会直接返回 401
      */
     @PostMapping("/logout")
     public Result<String> logout(@RequestHeader("X-Token") String token) {
+        // 拦截器已经保证 token 有效（能进 Controller 就说明 token 没问题）
         loginService.logout(token);
         return Result.success("已登出");
     }
 
     /**
-     * 获取当前登录用户信息（鉴权拦截器放行 /login 后也会进拦截器，这个接口能拿到当前用户）
+     * 获取当前登录用户信息
+     * FIX: /login/current 也需要 token 校验（不放行），拦截器把 user 放进 UserContext 后这里直接拿
+     * FIX: 返回副本而不是原对象——原对象的 password 不能在这里被置 null，否则会污染 TokenUtil 内存里的 User
      */
     @GetMapping("/current")
     public Result<User> current() {
@@ -55,8 +58,11 @@ public class LoginController {
         if(user == null) {
             return Result.fail(401, "未登录");
         }
-        // FIX: 不要把 password 返回给前端
-        user.setPassword(null);
-        return Result.success(user);
+        // FIX: new 一个副本返回，不修改内存里原对象的任何字段（原对象的 password 不能被置 null！）
+        User safeCopy = new User();
+        safeCopy.setUsername(user.getUsername());
+        safeCopy.setRole(user.getRole());
+        // password 不拷贝——脱敏
+        return Result.success(safeCopy);
     }
 }
