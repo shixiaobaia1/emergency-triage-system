@@ -15,33 +15,29 @@ import java.nio.charset.StandardCharsets;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
-/**
- * 第一阶段核心服务：循环队列调度 + 患者等待时间计算
- * FIX: 从 EmergencyService 拆分出来，职责单一化
- * FIX: 线程安全——所有 public 方法加 synchronized（简单 demo 场景够用）
- */
 @Service
 public class QueueService {
     private CycleQueue queue;
 
-    // FIX: @Value 指向 static/patients.txt（你生成的 80 条格式数据文件）
+    //用 @Value注释 指向patients.txt（你生成的 80 条格式数据文件）
     @Value("classpath:static/patients.txt")
     private Resource resource;
 
-    private List<String> lines;   // txt 文件全部行
-    private int idx = 0;          // 当前读到第几行
+    private List<String> lines;   // 存txt 文件全部行
+    private int idx = 0;          // 记录当前读到第几行
 
-    // FIX: DateTimeFormatter 缓存，避免每次 toPatientVO 都 new 一个
+    //  DateTimeFormatter 缓存，避免每次 toPatientVO 都 new 一个
     private static final DateTimeFormatter HH_MM = DateTimeFormatter.ofPattern("HH:mm");
-    // FIX: Entity 的 int id → VO 的 String 编号（如 1 → "P001"）
     private static final String ID_PREFIX = "P";
     private static final int ID_DIGITS = 3;
 
-    // FIX: 从 txt 加载 80 个患者数据到内存，但不直接入队（按需入队）
+    //从 txt 加载 80 个患者数据到内存，但先不直接入队
     public synchronized void loadFromFile() throws IOException {
         if(resource == null || !resource.exists()) {
+            //出错处理
             throw new IOException("找不到患者数据文件 static/patients.txt");
         }
+        //从资源中拿数据放到内存里
         try (BufferedReader br = new BufferedReader(
                 new InputStreamReader(resource.getInputStream(), StandardCharsets.UTF_8))) {
             lines = br.lines()
@@ -50,19 +46,19 @@ public class QueueService {
                     .toList();
         }
         queue = new CycleQueue(lines.size());
-        idx = 0;  // FIX: 加载时重置计数器
+        idx = 0;  //加载时重置计数器，回到第0行
     }
 
-    // FIX: 从 txt 取下一个患者入队（按优先级插入）
+    //从 txt 取下一个患者入队（按优先级插入）
     public synchronized QueueStatusVO addOneFromFile() {
         if(lines == null || lines.isEmpty()) {
-            return buildStatus();  // FIX: 未加载文件时返回空状态
+            return buildStatus();  // 未加载文件时返回空状态
         }
         if(idx >= lines.size()) {
-            return buildStatus();  // FIX: 全部入队完防越界
+            return buildStatus();  //防越界
         }
         Patient patient = parseLine(lines.get(idx));
-        // FIX: 队列满时自动扩容
+        // 队列满时扩容
         if(!queue.insertPriority(patient)){
             List<Patient> all = queue.getAll();
             queue = new CycleQueue(queue.getMaxLength() + all.size());
@@ -75,10 +71,7 @@ public class QueueService {
     }
 
     /**
-     * FIX: 把一行 txt 解析成 Patient Entity
-     * txt 格式：P001 到达 08:00 时长 15min 优先级 3
-     *  列索引:  s[0]    s[1] s[2]  s[3] s[4]  s[5]  s[6]    s[7]
-     * FIX: s[0] 是 "P001" 这种 String 编号，需要剥掉 "P" 前缀转成 int 存 Entity
+     把字符串变成patient对象
      */
     private Patient parseLine(String line) {
         String[] s = line.split("\\s+");
@@ -95,7 +88,7 @@ public class QueueService {
         return new Patient(numericId, null, arrival, treatMin, priority, 0);
     }
 
-    // FIX: 队首患者就诊，出队
+    //队首患者去就诊，出队
     public synchronized QueueStatusVO treatNext() {
         if(queue == null || queue.isEmpty()) return buildStatus();
         queue.deQueue();
@@ -103,7 +96,7 @@ public class QueueService {
         return buildStatus();
     }
 
-    // FIX: 患者放弃排队
+    // 患者放弃排队
     public synchronized QueueStatusVO giveUp(int patientId) {
         if(queue == null) return buildStatus();
         queue.remove(patientId);
@@ -111,28 +104,28 @@ public class QueueService {
         return buildStatus();
     }
 
-    // FIX: 重置队列——清空循环队列 + 重置文件读取计数器
+    // 重置队列
     public synchronized QueueStatusVO reset() {
         if(queue != null) queue.clear();
-        idx = 0;  // FIX: 必须同时重置 idx，否则后续再次 addOneFromFile 会越界
-        return buildStatus();
+        idx = 0;
+        return buildStatus();//清理参数
     }
 
-    // FIX: 获取队列当前状态（原 Controller getStatus 调错了 reset）
+    //获取队列当前状态
     public synchronized QueueStatusVO getStatus() {
         return buildStatus();
     }
 
-    // FIX: 获取平均等待时间（直接返回值，不通过 VO）
+    //获取平均等待时间
     public synchronized double getAvgWaitTime() {
         if(queue == null || queue.isEmpty()) return 0;
         timeStep();
         double sum = 0;
-        int validCount = 0;  // FIX: 用有效元素数算平均，不用 queue.getLength()（更安全）
+        int validCount = 0;//记录实际有几个，防止出问题
         int i = queue.getFront();
         while(i != queue.getRear()) {
             Patient p = queue.getPatients()[i];
-            if(p != null) {  // FIX: 跳过可能的 null 槽
+            if(p != null) {
                 sum += p.getWaitTime();
                 validCount++;
             }
@@ -141,24 +134,20 @@ public class QueueService {
         return validCount > 0 ? sum / validCount : 0;
     }
 
-    // FIX: 暴露队列快照给 HeapService 构建大根堆用（返回 Entity 列表，VO 在 HeapService 转）
+    //给外面的api调用，看当前队列
     public synchronized List<Patient> getAllPatientsSnapshot() {
         if(queue == null) return List.of();
         timeStep();
         return queue.getAll();
     }
-
-    // ===== 内部私有方法 =====
-
-    // FIX: 时间步进——重新计算每个患者的等待时间
-    //  队首 waitTime=0，后一个等前一个看完（treatTime 累加）
+    //计算每一个患者的等待时间，用前面的处理时间之和
     private void timeStep() {
         if(queue.isEmpty()) return;
         int waitTime = 0;
         int id = queue.getFront();
         while(id != queue.getRear()) {
             Patient p = queue.getPatients()[id];
-            if(p == null) {  // FIX: 防御性 null 检查，防止数组留空槽时 NPE
+            if(p == null) {
                 id = (id + 1) % queue.getMaxLength();
                 continue;
             }
@@ -168,7 +157,7 @@ public class QueueService {
         }
     }
 
-    // FIX: 构建 QueueStatusVO（Entity → VO 转换在这里做，Controller 不碰 Entity）
+    //构建 QueueStatusVO
     private QueueStatusVO buildStatus() {
         QueueStatusVO vo = new QueueStatusVO();
         if(queue == null) {
@@ -189,7 +178,6 @@ public class QueueService {
         return vo;
     }
 
-    // FIX: Patient Entity → PatientVO（Entity int id → VO "P001" 格式 String）
     private PatientVO toPatientVO(Patient p) {
         PatientVO v = new PatientVO();
         v.setId(formatId(p.getId()));  // FIX: 1 → "P001"
@@ -201,8 +189,7 @@ public class QueueService {
         return v;
     }
 
-    // FIX: Entity 的 int id → txt 文件中的 String 编号格式
-    //  如 1 → "P001"，42 → "P042"，80 → "P080"
+    // 让int id → 变回txt里的P+数字格式
     public static String formatId(int numericId) {
         return ID_PREFIX + String.format("%0" + ID_DIGITS + "d", numericId);
     }

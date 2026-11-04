@@ -8,9 +8,9 @@ import lombok.Data;
  */
 @Data
 public class PatientVO {
-    private String id;            // FIX: String 类型编号，如 P001、P002——和 txt 文件格式一致
-    private String name;          // 姓名（暂未用，后续可扩展）
-    private String arriveTime;    // 到达时间，格式化 HH:mm（FIX: Entity 是 LocalTime，VO 转 String 方便前端展示）
+    private String id;            // String 类型编号
+    private String name;          // 姓名
+    private String arriveTime;    // 到达时间，格式化 HH:mm
     private int treatTime;        // 治疗耗时（分钟）
     private int priority;         // 优先级（1最紧急）
     private int waitTime;         // 当前等待时间（分钟）

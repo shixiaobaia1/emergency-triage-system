@@ -4,14 +4,12 @@ package org.example.queue.vo;
 import java.util.List;
 
 /**
- * 队列状态响应 VO（替代原 QueueMessage）
- * FIX: 新增 VO 分层，把循环队列内部实现细节（front/rear 指针）也暴露出来，
- *      因为第一阶段任务需要展示队头队尾状态
+    队列状态响应 VO
  */
 
 public class QueueStatusVO {
-    private int front;          // 队头指针（循环队列内部实现细节，第一阶段需要展示）
-    private int rear;           // 队尾指针（循环队列内部实现细节，第一阶段需要展示）
+    private int front;          // 队头指针
+    private int rear;           // 队尾指针
     private int queueSize;      // 队列当前人数
     private int capacity;       // 队列总容量
     private double avgWaitTime; // 平均等待时间（分钟）

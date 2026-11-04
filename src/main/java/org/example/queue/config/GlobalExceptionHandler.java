@@ -6,10 +6,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.io.IOException;
 
-/**
- * 全局异常处理器——统一把 Controller 层抛出的异常转成 Result.fail 返回
- * FIX: 原来 Controller 每个方法都 throws IOException，现在由这里统一兜底
- */
+//处理异常的地方，有异常怎么办
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
