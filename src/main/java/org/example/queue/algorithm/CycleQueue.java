@@ -5,12 +5,23 @@ import org.example.queue.entity.Patient;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * 循环队列——第一阶段核心
+ * 牺牲一个存储单元区分空满：
+ *   front == rear           → 空
+ *   (rear + 1) % N == front → 满
+ * 所以数组开 length + 1 个槽位，实际最多放 length 个元素
+ *
+ * 内部有两种入队：
+ *   enQueue          —— 按到达时间顺序入队（尾插）
+ *   insertPriority   —— 按优先级入队（优先级数字越小越紧急，插前面）
+ */
 public class CycleQueue {
-    private Patient[] patients;
-    private int front;//队头
-    private int rear;//队尾
-    private int maxLength;//数组长度
-    private int length;//目前的数组里有多少个元素
+    private Patient[] patients;  // 底层数组
+    private int front;           // 队头指针（指向最早入队的元素）
+    private int rear;            // 队尾指针（指向下一个可以放元素的空槽）
+    private int maxLength;       // 数组总长度（= capacity + 1，牺牲一个槽）
+    private int length;          // 队列里当前实际有多少个元素
 
     public CycleQueue(int length) {
         patients = new Patient[length + 1];

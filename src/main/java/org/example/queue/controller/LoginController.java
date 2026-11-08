@@ -8,6 +8,11 @@ import org.example.queue.vo.LoginVO;
 import org.example.queue.vo.Result;
 import org.springframework.web.bind.annotation.*;
 
+/**
+ * 登录 / 登出 / 当前用户 三个接口
+ * 登录成功返回 token，后续所有 /queue/** 请求请求头必须带 X-Token
+ * 账号数据从 static/account.txt 启动时加载
+ */
 @RestController
 @RequestMapping("/login")
 public class LoginController {

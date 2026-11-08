@@ -9,6 +9,11 @@ import org.springframework.stereotype.Service;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
+/**
+ * 大根堆排序服务——第二阶段
+ * 从 QueueService 拿所有医生队列的患者快照 → 拍平成 CycleQueue → 建大根堆 → 堆排序（升序）
+ * 排序依据是 waitTime（等待时间），升序结果适合第三阶段折半查找
+ */
 @Service
 public class HeapService {
 

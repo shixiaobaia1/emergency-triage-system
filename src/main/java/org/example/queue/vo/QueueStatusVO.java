@@ -8,14 +8,14 @@ import java.util.List;
  * FIX: 新增 doctorIndex / doctorName 标识这是哪个医生的队列
  */
 public class QueueStatusVO {
-    private int doctorIndex;
-    private String doctorName;
-    private int front;
-    private int rear;
-    private int queueSize;
-    private int capacity;
-    private double avgWaitTime;
-    private List<PatientVO> patientList;
+    private int doctorIndex;      // 医生编号 0-7
+    private String doctorName;    // 医生名称，如 "医生1"
+    private int front;            // 循环队列队头指针
+    private int rear;             // 循环队列队尾指针
+    private int queueSize;        // 队列当前人数
+    private int capacity;         // 队列总容量（= maxLength - 1，牺牲一个槽）
+    private double avgWaitTime;   // 该医生队列自己的平均等待时间（分钟）
+    private List<PatientVO> patientList; // 按排队顺序的患者列表
 
     public QueueStatusVO() {}
 
