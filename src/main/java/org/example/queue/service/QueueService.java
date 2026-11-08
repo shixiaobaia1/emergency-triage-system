@@ -13,31 +13,41 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
 public class QueueService {
-    private CycleQueue queue;
 
-    //用 @Value注释 指向patients.txt（你生成的 80 条格式数据文件）
+    // FIX: 8 个医生，每个医生有自己的循环队列
+    private static final int DOCTOR_COUNT = 8;
+    private final CycleQueue[] queues = new CycleQueue[DOCTOR_COUNT];
+
+    // FIX: 所有已入队患者的总列表（用于全局 avgWaitTime 和 HeapService 排序）
+    private final List<Patient> allPatients = new ArrayList<>();
+
     @Value("classpath:static/patients.txt")
     private Resource resource;
 
-    private List<String> lines;   // 存txt 文件全部行
-    private int idx = 0;          // 记录当前读到第几行
+    private List<String> lines;
+    private int idx = 0;
 
-    //  DateTimeFormatter 缓存，避免每次 toPatientVO 都 new 一个
     private static final DateTimeFormatter HH_MM = DateTimeFormatter.ofPattern("HH:mm");
     private static final String ID_PREFIX = "P";
     private static final int ID_DIGITS = 3;
 
-    //从 txt 加载 80 个患者数据到内存，但先不直接入队
+    // FIX: 构造时就初始化 8 个医生队列（每个容量先给大一点，不够会自动扩容）
+    public QueueService() {
+        for (int i = 0; i < DOCTOR_COUNT; i++) {
+            queues[i] = new CycleQueue(100);
+        }
+    }
+
+    /** 从 txt 加载患者数据到内存 */
     public synchronized void loadFromFile() throws IOException {
-        if(resource == null || !resource.exists()) {
-            //出错处理
+        if (resource == null || !resource.exists()) {
             throw new IOException("找不到患者数据文件 static/patients.txt");
         }
-        //从资源中拿数据放到内存里
         try (BufferedReader br = new BufferedReader(
                 new InputStreamReader(resource.getInputStream(), StandardCharsets.UTF_8))) {
             lines = br.lines()
@@ -45,122 +55,189 @@ public class QueueService {
                     .filter(s -> !s.isEmpty())
                     .toList();
         }
-        queue = new CycleQueue(lines.size());
-        idx = 0;  //加载时重置计数器，回到第0行
-    }
-
-    //从 txt 取下一个患者入队（按优先级插入）
-    public synchronized QueueStatusVO addOneFromFile() {
-        if(lines == null || lines.isEmpty()) {
-            return buildStatus();  // 未加载文件时返回空状态
-        }
-        if(idx >= lines.size()) {
-            return buildStatus();  //防越界
-        }
-        Patient patient = parseLine(lines.get(idx));
-        // 队列满时扩容
-        if(!queue.insertPriority(patient)){
-            List<Patient> all = queue.getAll();
-            queue = new CycleQueue(queue.getMaxLength() + all.size());
-            for(Patient p : all) queue.insertPriority(p);
-            queue.insertPriority(patient);
-        }
-        idx++;
-        timeStep();
-        return buildStatus();
+        idx = 0;
     }
 
     /**
-     把字符串变成patient对象
+     * FIX: 从 txt 取下一个患者，调度到"当前队列最短"的医生
+     * 返回所有医生队列状态的汇总
      */
+    public synchronized List<QueueStatusVO> addOneFromFile() {
+        if (lines == null || lines.isEmpty() || idx >= lines.size()) {
+            return getAllDoctorStatus();
+        }
+        Patient patient = parseLine(lines.get(idx));
+        // FIX: 调度策略——找当前人数最少的医生队列，实现负载均衡
+        int targetDoctor = findShortestQueue();
+        CycleQueue target = queues[targetDoctor];
+
+        // 队列满了就扩容
+        if (!target.insertPriority(patient)) {
+            List<Patient> all = target.getAll();
+            CycleQueue newQ = new CycleQueue(target.getMaxLength() + all.size() + 10);
+            for (Patient p : all) newQ.insertPriority(p);
+            newQ.insertPriority(patient);
+            queues[targetDoctor] = newQ;
+        } else {
+            // 直接塞进去了，target 引用还是指向原对象（insertPriority 是 in-place 修改）
+        }
+
+        allPatients.add(patient);
+        idx++;
+
+        // FIX: 每个医生队列的 waitTime 都要重新算（单个医生内部累加）
+        for (CycleQueue q : queues) timeStep(q);
+
+        return getAllDoctorStatus();
+    }
+
+    /** 队首患者就诊结束，出队（指定医生编号） */
+    public synchronized List<QueueStatusVO> treatNext(int doctorIndex) {
+        if (doctorIndex < 0 || doctorIndex >= DOCTOR_COUNT) return getAllDoctorStatus();
+        CycleQueue q = queues[doctorIndex];
+        if (q != null && !q.isEmpty()) {
+            Patient treated = q.deQueue();
+            // 从总表里也去掉（可选，也可以留着当历史记录）
+            if (treated != null) allPatients.removeIf(p -> p.getId() == treated.getId());
+        }
+        for (CycleQueue cq : queues) timeStep(cq);
+        return getAllDoctorStatus();
+    }
+
+    /** 医生自己出队（默认医生 0） */
+    public synchronized List<QueueStatusVO> treatNextDefault() {
+        return treatNext(0);
+    }
+
+    /** 患者放弃排队（从某个医生队列里删掉） */
+    public synchronized List<QueueStatusVO> giveUp(int patientId) {
+        // FIX: 找到这个患者在哪个医生队列里，然后从那个队列 remove
+        for (CycleQueue q : queues) {
+            List<Patient> snapshot = q.getAll();
+            boolean found = snapshot.stream().anyMatch(p -> p.getId() == patientId);
+            if (found) {
+                q.remove(patientId);
+                allPatients.removeIf(p -> p.getId() == patientId);
+                break;
+            }
+        }
+        for (CycleQueue cq : queues) timeStep(cq);
+        return getAllDoctorStatus();
+    }
+
+    /** 重置所有队列 */
+    public synchronized List<QueueStatusVO> reset() {
+        for (CycleQueue q : queues) q.clear();
+        allPatients.clear();
+        idx = 0;
+        return getAllDoctorStatus();
+    }
+
+    /** 获取所有医生队列的状态 */
+    public synchronized List<QueueStatusVO> getStatus() {
+        return getAllDoctorStatus();
+    }
+
+    /**
+     * FIX: 全局平均等待时间——8 个医生队列里所有患者的 waitTime 求平均
+     */
+    public synchronized double getAvgWaitTime() {
+        double sum = 0;
+        int count = 0;
+        for (CycleQueue q : queues) {
+            timeStep(q);
+            int i = q.getFront();
+            while (i != q.getRear()) {
+                Patient p = q.getPatients()[i];
+                if (p != null) {
+                    sum += p.getWaitTime();
+                    count++;
+                }
+                i = (i + 1) % q.getMaxLength();
+            }
+        }
+        return count > 0 ? sum / count : 0;
+    }
+
+    /** FIX: 给 HeapService 用——返回所有医生队列中所有患者的快照 */
+    public synchronized List<Patient> getAllPatientsSnapshot() {
+        // 每次取快照前确保每个医生队列的 waitTime 是最新的
+        for (CycleQueue q : queues) timeStep(q);
+        List<Patient> result = new ArrayList<>();
+        for (CycleQueue q : queues) {
+            result.addAll(q.getAll());
+        }
+        return result;
+    }
+
+    /** FIX: 返回指定医生的队列状态 */
+    public synchronized QueueStatusVO getDoctorStatus(int doctorIndex) {
+        if (doctorIndex < 0 || doctorIndex >= DOCTOR_COUNT) {
+            QueueStatusVO vo = new QueueStatusVO();
+            vo.setQueueSize(0);
+            return vo;
+        }
+        return buildDoctorStatus(queues[doctorIndex], doctorIndex);
+    }
+
+    // ========== 私有方法 ==========
+
+    /** FIX: 找当前患者数最少的医生队列——实现负载均衡调度 */
+    private int findShortestQueue() {
+        int minSize = Integer.MAX_VALUE;
+        int minIdx = 0;
+        for (int i = 0; i < DOCTOR_COUNT; i++) {
+            if (queues[i].getLength() < minSize) {
+                minSize = queues[i].getLength();
+                minIdx = i;
+            }
+        }
+        return minIdx;
+    }
+
+    /** 解析 patients.txt 一行 → Patient */
     private Patient parseLine(String line) {
         String[] s = line.split("\\s+");
-        // FIX: "P001" → 剥掉 'P' → "001" → parseInt → 1
         String rawId = s[0];
         int numericId = Integer.parseInt(rawId.replace(ID_PREFIX, ""));
-
-        // "08:00" → LocalTime
         java.time.LocalTime arrival = java.time.LocalTime.parse(s[2]);
-        // "15min" → 剥掉 "min" → parseInt → 15
         int treatMin = Integer.parseInt(s[4].replace("min", ""));
         int priority = Integer.parseInt(s[6]);
-
         return new Patient(numericId, null, arrival, treatMin, priority, 0);
     }
 
-    //队首患者去就诊，出队
-    public synchronized QueueStatusVO treatNext() {
-        if(queue == null || queue.isEmpty()) return buildStatus();
-        queue.deQueue();
-        timeStep();
-        return buildStatus();
-    }
-
-    // 患者放弃排队
-    public synchronized QueueStatusVO giveUp(int patientId) {
-        if(queue == null) return buildStatus();
-        queue.remove(patientId);
-        timeStep();
-        return buildStatus();
-    }
-
-    // 重置队列
-    public synchronized QueueStatusVO reset() {
-        if(queue != null) queue.clear();
-        idx = 0;
-        return buildStatus();//清理参数
-    }
-
-    //获取队列当前状态
-    public synchronized QueueStatusVO getStatus() {
-        return buildStatus();
-    }
-
-    //获取平均等待时间
-    public synchronized double getAvgWaitTime() {
-        if(queue == null || queue.isEmpty()) return 0;
-        timeStep();
-        double sum = 0;
-        int validCount = 0;//记录实际有几个，防止出问题
-        int i = queue.getFront();
-        while(i != queue.getRear()) {
-            Patient p = queue.getPatients()[i];
-            if(p != null) {
-                sum += p.getWaitTime();
-                validCount++;
-            }
-            i = (i + 1) % queue.getMaxLength();
-        }
-        return validCount > 0 ? sum / validCount : 0;
-    }
-
-    //给外面的api调用，看当前队列
-    public synchronized List<Patient> getAllPatientsSnapshot() {
-        if(queue == null) return List.of();
-        timeStep();
-        return queue.getAll();
-    }
-    //计算每一个患者的等待时间，用前面的处理时间之和
-    private void timeStep() {
-        if(queue.isEmpty()) return;
+    /** 计算单个医生队列里每个患者的等待时间（队首=0，往后累加 treatTime） */
+    private void timeStep(CycleQueue q) {
+        if (q == null || q.isEmpty()) return;
         int waitTime = 0;
-        int id = queue.getFront();
-        while(id != queue.getRear()) {
-            Patient p = queue.getPatients()[id];
-            if(p == null) {
-                id = (id + 1) % queue.getMaxLength();
+        int id = q.getFront();
+        while (id != q.getRear()) {
+            Patient p = q.getPatients()[id];
+            if (p == null) {
+                id = (id + 1) % q.getMaxLength();
                 continue;
             }
             p.setWaitTime(waitTime);
             waitTime += p.getTreatTime();
-            id = (id + 1) % queue.getMaxLength();
+            id = (id + 1) % q.getMaxLength();
         }
     }
 
-    //构建 QueueStatusVO
-    private QueueStatusVO buildStatus() {
+    /** FIX: 构建所有医生队列状态 */
+    private List<QueueStatusVO> getAllDoctorStatus() {
+        List<QueueStatusVO> list = new ArrayList<>();
+        for (int i = 0; i < DOCTOR_COUNT; i++) {
+            list.add(buildDoctorStatus(queues[i], i));
+        }
+        return list;
+    }
+
+    /** 构建单个医生的 QueueStatusVO */
+    private QueueStatusVO buildDoctorStatus(CycleQueue queue, int doctorIndex) {
         QueueStatusVO vo = new QueueStatusVO();
-        if(queue == null) {
+        vo.setDoctorIndex(doctorIndex);  // FIX: 标识这是哪个医生
+        vo.setDoctorName("医生" + (doctorIndex + 1));
+        if (queue == null) {
             vo.setFront(0);
             vo.setRear(0);
             vo.setQueueSize(0);
@@ -173,14 +250,31 @@ public class QueueService {
         vo.setRear(queue.getRear());
         vo.setQueueSize(queue.getLength());
         vo.setCapacity(queue.getMaxLength() - 1);
-        vo.setAvgWaitTime(getAvgWaitTime());
+        // 单个医生自己的平均等待时间
+        vo.setAvgWaitTime(calcDoctorAvg(queue));
         vo.setPatientList(queue.getAll().stream().map(this::toPatientVO).toList());
         return vo;
     }
 
+    /** 计算单个医生队列的平均等待时间 */
+    private double calcDoctorAvg(CycleQueue q) {
+        double sum = 0;
+        int count = 0;
+        int i = q.getFront();
+        while (i != q.getRear()) {
+            Patient p = q.getPatients()[i];
+            if (p != null) {
+                sum += p.getWaitTime();
+                count++;
+            }
+            i = (i + 1) % q.getMaxLength();
+        }
+        return count > 0 ? sum / count : 0;
+    }
+
     private PatientVO toPatientVO(Patient p) {
         PatientVO v = new PatientVO();
-        v.setId(formatId(p.getId()));  // FIX: 1 → "P001"
+        v.setId(formatId(p.getId()));
         v.setName(p.getName());
         v.setArriveTime(p.getArriveTime().format(HH_MM));
         v.setTreatTime(p.getTreatTime());
@@ -189,8 +283,11 @@ public class QueueService {
         return v;
     }
 
-    // 让int id → 变回txt里的P+数字格式
     public static String formatId(int numericId) {
         return ID_PREFIX + String.format("%0" + ID_DIGITS + "d", numericId);
+    }
+
+    public int getDoctorCount() {
+        return DOCTOR_COUNT;
     }
 }

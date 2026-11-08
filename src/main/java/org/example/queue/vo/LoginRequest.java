@@ -1,16 +1,18 @@
 package org.example.queue.vo;
 
-import lombok.Data;
-
 /**
-    登录请求
-    前端 POST /login 时的 JSON 请求体：
-    {"username":"admin","password":"123456"}
+ * 登录请求 DTO——前端 POST /login 时的 JSON 请求体
+ * FIX: 去掉 Lombok，改回手写 getter/setter
  */
-@Data
 public class LoginRequest {
-    /** 用户名（预置账号） */
     private String username;
-    /** 密码（预置密码） */
     private String password;
+
+    public LoginRequest() {}
+
+    public String getUsername() { return username; }
+    public void setUsername(String username) { this.username = username; }
+
+    public String getPassword() { return password; }
+    public void setPassword(String password) { this.password = password; }
 }

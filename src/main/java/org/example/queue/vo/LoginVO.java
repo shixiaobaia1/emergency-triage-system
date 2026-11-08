@@ -1,15 +1,22 @@
 package org.example.queue.vo;
 
-import lombok.Data;
-
 /**
-    登录成功响应 VO——返回给前端的登录结果
-    前端拿到 token 后后续所有接口请求里一定要带 header: X-Token: oken
+ * 登录成功响应 VO——返回给前端的登录结果
+ * FIX: 去掉 Lombok，改回手写 getter/setter
  */
-@Data
 public class LoginVO {
-    /** 登录 token（32 位 UUID）*/
     private String token;
     private String username;
     private String role;
+
+    public LoginVO() {}
+
+    public String getToken() { return token; }
+    public void setToken(String token) { this.token = token; }
+
+    public String getUsername() { return username; }
+    public void setUsername(String username) { this.username = username; }
+
+    public String getRole() { return role; }
+    public void setRole(String role) { this.role = role; }
 }
