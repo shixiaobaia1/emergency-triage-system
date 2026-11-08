@@ -54,3 +54,4 @@ public class QueueStatusVO {
 
     public List<PatientVO> getPatientList() { return patientList; }
     public void setPatientList(List<PatientVO> patientList) { this.patientList = patientList; }
+}
