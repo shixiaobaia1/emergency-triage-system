@@ -26,11 +26,17 @@ public class AuthInterceptor implements HandlerInterceptor {
     /**
      @return true=放行（进 Controller），false=拦截（不进 Controller）
      */
-    @Override
+@Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
         String uri = request.getRequestURI();
-        // 放行登录接口（登录前没 token）、错误页、静态资源
-        if(uri.equals("/login") || uri.equals("/error") || uri.startsWith("/static")) {
+        // 放行登录接口（登录前没 token）、错误页、静态资源、首页、第三阶段接口
+        // FIX: 融合 HospitalQueue 后新增放行路径——让第三阶段前端页面能直接访问
+        if(uri.equals("/login") || uri.equals("/error")
+                || uri.startsWith("/static")
+                || uri.equals("/") || uri.equals("/index.html")
+                || uri.startsWith("/binary")
+                || uri.startsWith("/hash")
+                || uri.startsWith("/schedule")) {
             return true;
         }
 

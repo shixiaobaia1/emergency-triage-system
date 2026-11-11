@@ -25,12 +25,10 @@ public class QueueService {
     private static final int DOCTOR_COUNT = 8;
     private final CycleQueue[] queues = new CycleQueue[DOCTOR_COUNT];
 
-    // FIX: 新增——全局等待池（PriorityQueue）
-    // 调度核心：患者先进入这个等待池，再按优先级动态分配给空闲医生
-    // 优先级数字越小越紧急，同级按到达时间先后
+    // FIX: 全局等待池排序规则——先按到达时间升序，同时到的按优先级升序（数字越小越紧急）
     private final PriorityQueue<Patient> waitingPool = new PriorityQueue<>(
-            Comparator.comparingInt(Patient::getPriority)
-                    .thenComparing(Patient::getArriveTime)
+            Comparator.comparing(Patient::getArriveTime)
+                    .thenComparing(Patient::getPriority)
     );
 
     // 所有已入队（包括等待池 + 医生队列）的患者总列表
@@ -66,57 +64,35 @@ public class QueueService {
                     .toList();
         }
         idx = 0;
+
+        // FIX: 加载时把所有患者一次性放进全局等待池（按到达时间+优先级自动排序）
+        for (String line : lines) {
+            Patient p = parseLine(line);
+            waitingPool.offer(p);
+            allPatients.add(p);
+        }
     }
 
     /**
-     * FIX: 从 txt 取下一个患者，先入全局等待池，再按优先级动态调度到最空闲的医生
-     * 返回所有医生队列状态的汇总
+     * FIX: 从全局等待池取一个患者（按"到达时间优先、同到达优先级高优先"排序），
+     * 分配给当前"总治疗时间最短"的医生队列
      */
     public synchronized List<QueueStatusVO> addOneFromFile() {
-        if (lines == null || lines.isEmpty() || idx >= lines.size()) {
+        if (waitingPool.isEmpty()) {
             return getAllDoctorStatus();
         }
-        Patient patient = parseLine(lines.get(idx));
-        // FIX: 不再直接塞医生队列，先进全局等待池
-        waitingPool.offer(patient);
-        allPatients.add(patient);
-        idx++;
-
-        // FIX: 触发调度——从等待池里按优先级取人，分给当前最空的医生
-        dispatchFromWaitingPool();
-
-        return getAllDoctorStatus();
-    }
-
-    /**
-     * FIX: 核心调度——从 waitingPool 里持续取患者，直到所有医生都"满一档"
-     * 每次取优先级最高（数字最小）的患者，分给当前最短的医生队列
-     */
-    private void dispatchFromWaitingPool() {
-        // 循环直到等待池空，或者所有医生都至少有 1 人了（第一轮）
-        // 更完整的策略：等待池不空就一直调——谁最空给谁
-        while (!waitingPool.isEmpty()) {
-            int targetDoctor = findShortestQueue();
-            Patient next = waitingPool.peek();
-            if (next == null) break;
-
-            CycleQueue target = queues[targetDoctor];
-            // 队列满了就扩容（复用原来的扩容逻辑，不动）
-            if (!target.insertPriority(next)) {
-                List<Patient> all = target.getAll();
-                CycleQueue newQ = new CycleQueue(target.getMaxLength() + all.size() + 10);
-                for (Patient p : all) newQ.insertPriority(p);
-                target = newQ;
-                queues[targetDoctor] = newQ;
-                newQ.insertPriority(next);
-            } else {
-                // 直接塞进去了
-            }
-            waitingPool.poll();  // 确认塞成功了才从等待池移除
+        Patient patient = waitingPool.poll();
+        int target = findMinTreatTimeQueue();
+        if (!queues[target].insertPriority(patient)) {
+            // 满了就扩容
+            List<Patient> all = queues[target].getAll();
+            CycleQueue newQ = new CycleQueue(queues[target].getMaxLength() + all.size() + 10);
+            for (Patient p : all) newQ.insertPriority(p);
+            queues[target] = newQ;
+            newQ.insertPriority(patient);
         }
-
-        // 每个医生队列的 waitTime 重新算（复用原来的 timeStep，不动）
         for (CycleQueue q : queues) timeStep(q);
+        return getAllDoctorStatus();
     }
 
     /** 队首患者就诊结束，出队（指定医生编号） */
@@ -128,28 +104,20 @@ public class QueueService {
             // 从总表里也去掉
             if (treated != null) allPatients.removeIf(p -> p.getId() == treated.getId());
         }
-        // FIX: 这个医生空出了一个位置，从等待池里补人进来
-        dispatchOneToDoctor(doctorIndex);
-
+        // FIX: 出队后从等待池取一个，分配给"总治疗时间最短"的医生（可能不是刚出队的那个）
+        if (!waitingPool.isEmpty()) {
+            int target = findMinTreatTimeQueue();
+            Patient next = waitingPool.poll();
+            if (!queues[target].insertPriority(next)) {
+                List<Patient> all = queues[target].getAll();
+                CycleQueue newQ = new CycleQueue(queues[target].getMaxLength() + all.size() + 10);
+                for (Patient p : all) newQ.insertPriority(p);
+                queues[target] = newQ;
+                newQ.insertPriority(next);
+            }
+        }
         for (CycleQueue cq : queues) timeStep(cq);
         return getAllDoctorStatus();
-    }
-
-    /** FIX: 医生出队后，从等待池里补一个最紧急的患者给他 */
-    private void dispatchOneToDoctor(int doctorIndex) {
-        if (waitingPool.isEmpty()) return;
-        Patient next = waitingPool.poll();
-        if (next == null) return;
-
-        CycleQueue target = queues[doctorIndex];
-        if (!target.insertPriority(next)) {
-            // 满了就扩容
-            List<Patient> all = target.getAll();
-            CycleQueue newQ = new CycleQueue(target.getMaxLength() + all.size() + 10);
-            for (Patient p : all) newQ.insertPriority(p);
-            newQ.insertPriority(next);
-            queues[doctorIndex] = newQ;
-        }
     }
 
     /** 医生自己出队（默认医生 0） */
@@ -217,13 +185,15 @@ public class QueueService {
         return count > 0 ? sum / count : 0;
     }
 
-    /** 给 HeapService 用——返回所有医生队列中所有患者的快照（不动） */
+    /** 给 HeapService 用——返回所有已进入排队的患者快照（医生队列 + 等待池） */
     public synchronized List<Patient> getAllPatientsSnapshot() {
         for (CycleQueue q : queues) timeStep(q);
         List<Patient> result = new ArrayList<>();
         for (CycleQueue q : queues) {
             result.addAll(q.getAll());
         }
+        // FIX: 等待池里的患者也属于已进入排队的，一并返回给堆排序
+        result.addAll(waitingPool);
         return result;
     }
 
@@ -244,13 +214,17 @@ public class QueueService {
 
     // ========== 私有方法（全部保留原来的逻辑，不动） ==========
 
-    /** 找当前患者数最少的医生队列——实现负载均衡调度 */
-    private int findShortestQueue() {
-        int minSize = Integer.MAX_VALUE;
+    /** FIX: 找当前"总治疗时间最短"的医生队列——遍历队列内所有患者的 treatTime 求和，选总和最小的 */
+    private int findMinTreatTimeQueue() {
+        int minTime = Integer.MAX_VALUE;
         int minIdx = 0;
         for (int i = 0; i < DOCTOR_COUNT; i++) {
-            if (queues[i].getLength() < minSize) {
-                minSize = queues[i].getLength();
+            int total = 0;
+            for (Patient p : queues[i].getAll()) {
+                total += p.getTreatTime();
+            }
+            if (total < minTime) {
+                minTime = total;
                 minIdx = i;
             }
         }

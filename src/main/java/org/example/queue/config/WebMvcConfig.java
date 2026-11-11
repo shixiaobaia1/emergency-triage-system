@@ -1,6 +1,7 @@
 package org.example.queue.config;
 
 import org.springframework.stereotype.Component;
+import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
@@ -19,15 +20,21 @@ public class WebMvcConfig implements WebMvcConfigurer {
         this.authInterceptor = authInterceptor;
     }
 
+    // 注册鉴权拦截器——登录接口 /error /static 放行，其他都要带 X-Token
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(authInterceptor)
-                .addPathPatterns("/**")// 拦截所有 URI
-                .excludePathPatterns(
-                        "/login",
-                        "/error",
-                        "/static/**",
-                        "/favicon.ico"//这些需要放行
-                );
+                .addPathPatterns("/**")
+                .excludePathPatterns("/login", "/error", "/static/**");
+    }
+
+    @Override
+    public void addCorsMappings(CorsRegistry registry) {
+        registry.addMapping("/**")
+                .allowedOriginPatterns("*")
+                .allowedMethods("GET", "POST", "DELETE", "OPTIONS")
+                .allowedHeaders("*")
+                .allowCredentials(true)
+                .maxAge(3600);
     }
 }
