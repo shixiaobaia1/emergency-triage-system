@@ -9,7 +9,7 @@ public class UserContext {
     // ThreadLocal 静态变量，全局唯一，每个线程有独立副本
     private static final ThreadLocal<User> CURRENT = new ThreadLocal<>();
 
-    //鉴权拦截器校验 token 通过后调用，把当前线程绑定到 user /
+    //鉴权拦截器校验 token 通过后调用，把当前线程绑定到 user
     public static void set(User user) {
         CURRENT.set(user);
     }
@@ -19,7 +19,7 @@ public class UserContext {
         return CURRENT.get();
     }
 
-    /** 请求结束后必须调用，清除 ThreadLocal，防止线程池复用时串用户 */
+    /** 请求结束后调用，清除 ThreadLocal，防止线程池复用时串用户 */
     public static void clear() {
         CURRENT.remove();
     }

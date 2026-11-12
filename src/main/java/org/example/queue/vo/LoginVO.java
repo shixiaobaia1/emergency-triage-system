@@ -2,7 +2,6 @@ package org.example.queue.vo;
 
 /**
  * 登录成功响应 VO——返回给前端的登录结果
- * FIX: 去掉 Lombok，改回手写 getter/setter
  */
 public class LoginVO {
     private String token;

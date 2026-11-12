@@ -10,7 +10,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @Component
 public class TokenUtil {
 
-    // token → User 的内存映射
+    // token映射是哪个账号
     // ConcurrentHashMap 保证并发读写线程安全（多用户同时登录/登出不会出问题）
     private final Map<String, User> sessions = new ConcurrentHashMap<>();
 
@@ -36,8 +36,7 @@ public class TokenUtil {
     }
 
     /**
-     * 登出 / 强制下线
-     * 以后无法用这个token了
+     * 登出账号，让token失效
      */
     public void invalidate(String token) {
         sessions.remove(token);

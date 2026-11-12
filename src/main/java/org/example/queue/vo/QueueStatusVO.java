@@ -4,8 +4,6 @@ import java.util.List;
 
 /**
  * 单个医生队列的状态响应 VO
- * FIX: 去掉 Lombok，改回手写构造器 + getter/setter
- * FIX: 新增 doctorIndex / doctorName 标识这是哪个医生的队列
  */
 public class QueueStatusVO {
     private int doctorIndex;      // 医生编号 0-7

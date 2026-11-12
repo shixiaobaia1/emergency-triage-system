@@ -2,12 +2,11 @@ package org.example.queue.entity;
 
 /**
  * 用户实体——支持两个角色：ADMIN（管理员）和 DOCTOR（医生）
- * FIX: 去掉 Lombok，改回手写构造器 + getter/setter
  */
 public class User {
-    private String username;
-    private String password;
-    private Role role;
+    private String username;//账号名
+    private String password;//密码
+    private Role role;//角色
 
     public User() {}
 

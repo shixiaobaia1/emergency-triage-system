@@ -2,11 +2,10 @@ package org.example.queue.vo;
 
 /**
  * 登录请求 DTO——前端 POST /login 时的 JSON 请求体
- * FIX: 去掉 Lombok，改回手写 getter/setter
  */
 public class LoginRequest {
-    private String username;
-    private String password;
+    private String username;//账号
+    private String password;//密码
 
     public LoginRequest() {}
 

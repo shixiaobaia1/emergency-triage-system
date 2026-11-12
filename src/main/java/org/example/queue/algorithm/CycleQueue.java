@@ -5,22 +5,12 @@ import org.example.queue.entity.Patient;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * 循环队列——第一阶段核心
- * 牺牲一个存储单元区分空满：
- *   front == rear           → 空
- *   (rear + 1) % N == front → 满
- * 所以数组开 length + 1 个槽位，实际最多放 length 个元素
- *
- * 内部有两种入队：
- *   enQueue          —— 按到达时间顺序入队（尾插）
- *   insertPriority   —— 按优先级入队（优先级数字越小越紧急，插前面）
- */
+
 public class CycleQueue {
     private Patient[] patients;  // 底层数组
     private int front;           // 队头指针（指向最早入队的元素）
     private int rear;            // 队尾指针（指向下一个可以放元素的空槽）
-    private int maxLength;       // 数组总长度（= capacity + 1，牺牲一个槽）
+    private int maxLength;       // 数组总长度
     private int length;          // 队列里当前实际有多少个元素
 
     public CycleQueue(int length) {
@@ -63,7 +53,6 @@ public class CycleQueue {
         int newRear = (rear + 1) % maxLength;
 
         //从 rear-1 开始往前找插入点，同时把优先级更大的元素往后搬
-        //最多搬 length 次，不会越过已填充区域
         int i = (rear - 1 + maxLength) % maxLength;
         int moved = 0;
         while(moved < length) {
@@ -103,23 +92,26 @@ public class CycleQueue {
     //去除中间某一个患者（放弃排队）
     public void remove(int id){
         int i = front;
-        boolean flag = false;
         while(i != rear){
             if(patients[i].getId() == id){
-                i = (i + 1) % maxLength;
-                while(i != rear){
-                    //后面的推到前面去
-                    patients[(i - 1 + maxLength) % maxLength] = patients[i];
-                    i = (i + 1) % maxLength;
-                    flag = true;
+                // 找到目标后，把它后面的元素依次前移一格；若它已是最后一个有效元素，则直接清空
+                int j = i;
+                while(true){
+                    int next = (j + 1) % maxLength;
+                    if(next == rear){
+                        // 末尾槽位必须置 null，否则数组里会残留已删除患者的引用
+                        patients[j] = null;
+                        break;
+                    }
+                    patients[j] = patients[next];
+                    j = next;
                 }
-                break;
+                rear = (rear - 1 + maxLength) % maxLength;
+                length--;
+                return;
             }
             i = (i + 1) % maxLength;
         }
-        //改length和rear
-        if(flag) length--;
-        if(flag) rear = (rear - 1 + maxLength) % maxLength;
     }
 
     public Patient[] getPatients() {

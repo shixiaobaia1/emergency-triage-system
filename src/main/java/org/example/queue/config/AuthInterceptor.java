@@ -18,7 +18,6 @@ public class AuthInterceptor implements HandlerInterceptor {
 
     private final TokenUtil tokenUtil;
 
-    // 构造器注入（Spring 推荐）
     public AuthInterceptor(TokenUtil tokenUtil) {
         this.tokenUtil = tokenUtil;
     }
@@ -29,18 +28,19 @@ public class AuthInterceptor implements HandlerInterceptor {
 @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
         String uri = request.getRequestURI();
-        // 放行登录接口（登录前没 token）、错误页、静态资源、首页、第三阶段接口
-        // FIX: 融合 HospitalQueue 后新增放行路径——让第三阶段前端页面能直接访问
+        // 放行登录接口、错误页、静态资源、首页、第三阶段接口
         if(uri.equals("/login") || uri.equals("/error")
                 || uri.startsWith("/static")
                 || uri.equals("/") || uri.equals("/index.html")
                 || uri.startsWith("/binary")
                 || uri.startsWith("/hash")
-                || uri.startsWith("/schedule")) {
+                || uri.startsWith("/schedule")
+                // 直接按文件名访问的静态资源（如 /bg.jpg）也放行，不带 token
+                || uri.matches(".*\\.(jpg|jpeg|png|gif|svg|ico|css|js|woff2?|ttf|eot|webp)$")) {
             return true;
         }
 
-        // 从请求头取 token（前端每次调接口要带 X-Token: xxx）
+        // 从请求头取 token
         String token = request.getHeader("X-Token");
         User user = tokenUtil.getUser(token);
         if(user == null) {

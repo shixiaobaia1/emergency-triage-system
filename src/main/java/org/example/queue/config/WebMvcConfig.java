@@ -9,7 +9,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 //  Web MVC 配置类——把 AuthInterceptor 注册到 Spring MVC 的拦截器链里
 //
 // addPathPatterns("/**") — 拦截所有请求
-// excludePathPatterns     — 白名单放行（这些路径不走鉴权）
+// excludePathPatterns     — 白名单放行
 
 @Component
 public class WebMvcConfig implements WebMvcConfigurer {
@@ -27,7 +27,7 @@ public class WebMvcConfig implements WebMvcConfigurer {
                 .addPathPatterns("/**")
                 .excludePathPatterns("/login", "/error", "/static/**");
     }
-
+    //允许别的站点访问我的接口
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/**")

@@ -14,8 +14,8 @@ import java.io.IOException;
 import java.util.List;
 
 /**
- * FIX: 8 个医生多队列调度 Controller
- * 原来的单队列 QueueService 已经改成 8 个 CycleQueue（每个医生一个）
+ * FIX: 多医生多队列调度 Controller
+ * 医生人数不固定，由 /queue/load?doctorCount=N 传入，每个医生一个独立的 CycleQueue
  */
 @RestController
 @RequestMapping("/queue")
@@ -29,38 +29,47 @@ public class EmergencyController {
         this.heapService = heapService;
     }
 
-    /** 加载 patients.txt 数据到内存（不直接入队） */
+    /**
+     * FIX: 加载 patients.txt，医生人数由前端传入（默认 8）
+     * 加载后模拟时钟复位到 08:00 并自动开始（5 秒 = 1 分钟）
+     */
     @GetMapping("/load")
-    public Result<List<QueueStatusVO>> load() throws IOException {
-        queueService.loadFromFile();
+    public Result<List<QueueStatusVO>> load(@RequestParam(defaultValue = "8") int doctorCount) throws IOException {
+        queueService.loadFromFile(doctorCount);
         return Result.success(queueService.getStatus());
     }
 
-    /** FIX: 查看所有 8 个医生队列的状态 */
+    /** FIX: 查看所有医生队列的状态（数量由最近一次 load 的 doctorCount 决定） */
     @GetMapping("/status")
     public Result<List<QueueStatusVO>> getStatus() {
         return Result.success(queueService.getStatus());
     }
 
-    /** FIX: 查看指定医生的队列状态（index 0-7） */
+    /** FIX: 查看指定医生的队列状态（index 从 0 到 医生人数-1） */
     @GetMapping("/doctors/{index}")
     public Result<QueueStatusVO> getDoctorStatus(@PathVariable int index) {
         return Result.success(queueService.getDoctorStatus(index));
     }
 
-    /** 从 txt 加载下一个患者，调度到当前最短的医生队列 */
+    /** FIX: 手动推进一分钟（调试用，正常由 5 秒一跳的计时器自动推进） */
     @PostMapping("/add")
     public Result<List<QueueStatusVO>> addOne() {
         return Result.success(queueService.addOneFromFile());
     }
 
-    /** FIX: 队首患者就诊结束出队（指定医生编号，0-7） */
+    /** FIX: 手动让指定医生队首患者立即完成治疗（调试用，正常由计时器自动完成） */
     @GetMapping("/treat")
     public Result<List<QueueStatusVO>> treatNext(@RequestParam(defaultValue = "0") int doctorIndex) {
-        return Result.success(queueService.treatNext(doctorIndex));
+        return Result.success(queueService.completeHead(doctorIndex));
     }
 
-    /** FIX: 全局平均等待时间——所有医生队列中所有患者的 waitTime 总平均 */
+    /** FIX: 查看当前模拟时间（从 08:00 开始，每 5 秒跳 1 分钟） */
+    @GetMapping("/now")
+    public Result<String> now() {
+        return Result.success(queueService.getSimTime());
+    }
+
+    /** FIX: 全局平均等待时间——所有仍在排队患者的"即时等待时间"总平均 */
     @GetMapping("/avg")
     public Result<Double> getAvgTime() {
         return Result.success(queueService.getAvgWaitTime());

@@ -2,29 +2,26 @@ package org.example.queue.entity;
 
 import java.time.LocalTime;
 
-/**
- * 患者实体类
- * FIX: 去掉 Lombok，改回手写构造器 + getter/setter
- */
+
 public class Patient {
-    private int id;           // Entity 内部存 int（从 txt 的 "P001" 剥掉 P 前缀解析而来）
-    private String name;
-    private LocalTime arriveTime;
-    private int treatTime;    // 原 proveTime 语义错误（prove=证明），改为 treatTime（治疗耗时）
-    private int priority;
-    private int waitTime;
+    private int id;           // 从 txt 的 "P001" 剥掉 P 前缀解析而来
+    private String name;//患者名字
+    private LocalTime arriveTime;//到达时间
+    private int treatTime;    // 治疗耗时（分钟）
+    private int priority;     // 优先级，数字越小越紧急
+    private int totalWaitTime;   // 患者到达到真正就诊的时间
+    private int currentWaitTime; // 目前还要等多久
 
     // 无参构造
     public Patient() {}
 
-    // 全参构造
-    public Patient(int id, String name, LocalTime arriveTime, int treatTime, int priority, int waitTime) {
+    // 全参构造（两个等待时间默认 0，由 QueueService 计算后回填）
+    public Patient(int id, String name, LocalTime arriveTime, int treatTime, int priority) {
         this.id = id;
         this.name = name;
         this.arriveTime = arriveTime;
         this.treatTime = treatTime;
         this.priority = priority;
-        this.waitTime = waitTime;
     }
 
     public int getId() { return id; }
@@ -42,6 +39,9 @@ public class Patient {
     public int getPriority() { return priority; }
     public void setPriority(int priority) { this.priority = priority; }
 
-    public int getWaitTime() { return waitTime; }
-    public void setWaitTime(int waitTime) { this.waitTime = waitTime; }
+    public int getTotalWaitTime() { return totalWaitTime; }
+    public void setTotalWaitTime(int totalWaitTime) { this.totalWaitTime = totalWaitTime; }
+
+    public int getCurrentWaitTime() { return currentWaitTime; }
+    public void setCurrentWaitTime(int currentWaitTime) { this.currentWaitTime = currentWaitTime; }
 }

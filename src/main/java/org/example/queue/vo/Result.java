@@ -2,7 +2,7 @@ package org.example.queue.vo;
 
 
 /**
- * 统一响应包装
+ * 包装响应的统一规范
  */
 public class Result<T> {
     private int code;    // 状态码：200成功，其他失败
