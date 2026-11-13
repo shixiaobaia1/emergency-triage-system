@@ -13,10 +13,7 @@ import org.springframework.web.bind.annotation.*;
 import java.io.IOException;
 import java.util.List;
 
-/**
- * FIX: 多医生多队列调度 Controller
- * 医生人数不固定，由 /queue/load?doctorCount=N 传入，每个医生一个独立的 CycleQueue
- */
+
 @RestController
 @RequestMapping("/queue")
 public class EmergencyController {
@@ -30,8 +27,8 @@ public class EmergencyController {
     }
 
     /**
-     * FIX: 加载 patients.txt，医生人数由前端传入（默认 8）
-     * 加载后模拟时钟复位到 08:00 并自动开始（5 秒 = 1 分钟）
+     * 加载 patients.txt，医生人数由前端传入（默认 8）
+     * 加载后模拟时钟复位到 08:00 并自动开始（2秒 = 1 分钟）
      */
     @GetMapping("/load")
     public Result<List<QueueStatusVO>> load(@RequestParam(defaultValue = "8") int doctorCount) throws IOException {

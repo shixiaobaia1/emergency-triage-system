@@ -11,6 +11,8 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 // addPathPatterns("/**") — 拦截所有请求
 // excludePathPatterns     — 白名单放行
 
+//在web这里有白名单，其他进拦截器，再看拦截器的白名单，都不在就看有没有token
+
 @Component
 public class WebMvcConfig implements WebMvcConfigurer {
 

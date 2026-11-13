@@ -35,7 +35,7 @@ public class AuthInterceptor implements HandlerInterceptor {
                 || uri.startsWith("/binary")
                 || uri.startsWith("/hash")
                 || uri.startsWith("/schedule")
-                // 直接按文件名访问的静态资源（如 /bg.jpg）也放行，不带 token
+                // 直接按文件名访问的静态资源（如 /bg.jpg）也放行
                 || uri.matches(".*\\.(jpg|jpeg|png|gif|svg|ico|css|js|woff2?|ttf|eot|webp)$")) {
             return true;
         }

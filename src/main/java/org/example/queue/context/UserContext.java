@@ -14,12 +14,12 @@ public class UserContext {
         CURRENT.set(user);
     }
 
-    /** Controller/Service 里随时取当前登录用户，返回 null 表示没登录 */
+    /** 让Controller/Service 随时取当前登录用户，返回 null 表示没登录 */
     public static User get() {
         return CURRENT.get();
     }
 
-    /** 请求结束后调用，清除 ThreadLocal，防止线程池复用时串用户 */
+    /** 请求结束后调用，清除 ThreadLocal，防止线程池复用时用户信息还留存 */
     public static void clear() {
         CURRENT.remove();
     }

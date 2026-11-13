@@ -65,8 +65,8 @@ public class MaxHeap {
     }
 
     /*
-     把堆顶（最大的）交换到末尾，缩小范围继续交换知道最后一个
-     最终结果是 totalWaitTime 升序（适合第三阶段折半查找）
+     把堆顶交换到末尾，缩小范围继续交换直到最后一个
+     最终结果是 totalWaitTime 升序
      */
     public void heapSort(){
         for(int i = 0; i < maxHeap.length - 1; i++){

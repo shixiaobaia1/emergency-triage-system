@@ -99,13 +99,14 @@ public class CycleQueue {
                 while(true){
                     int next = (j + 1) % maxLength;
                     if(next == rear){
-                        // 末尾槽位必须置 null，否则数组里会残留已删除患者的引用
+                        //末尾槽位置null，同时结束循环
                         patients[j] = null;
                         break;
                     }
                     patients[j] = patients[next];
                     j = next;
                 }
+                //维护循环队列参数
                 rear = (rear - 1 + maxLength) % maxLength;
                 length--;
                 return;

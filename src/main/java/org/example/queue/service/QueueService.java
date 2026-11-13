@@ -26,7 +26,7 @@ public class QueueService {
 
     // 医生人数，可以前端回传再调
     private static final int DEFAULT_DOCTOR_COUNT = 8;
-    // FIX: 模拟时钟起点 08:00，每 5 秒推进 1 分钟
+    // 模拟时钟起点 08:00，每 2 秒推进 1 分钟
     private static final LocalTime SIM_START = LocalTime.of(8, 0);
 
     // 每个医生有自己的循环队列
@@ -47,7 +47,7 @@ public class QueueService {
                     .thenComparing(Patient::getPriority)
     );
 
-    // 所有仍在排队（等待池 + 医生队列）的患者总列表
+    // FIX: 全部患者总列表（含已治疗完成的患者，堆排序/平均等待时间统计仍包含他们）
     private final List<Patient> allPatients = new ArrayList<>();
     //找资源了
     @Value("classpath:static/patients.txt")
@@ -81,6 +81,7 @@ public class QueueService {
         if (resource == null || !resource.exists()) {
             throw new IOException("找不到患者数据文件 static/patients.txt");
         }
+        //加载数据
         List<String> lines;
         try (BufferedReader br = new BufferedReader(
                 new InputStreamReader(resource.getInputStream(), StandardCharsets.UTF_8))) {
@@ -96,7 +97,7 @@ public class QueueService {
         simTime = SIM_START;
         running = true;
 
-        // 解析所有患者，全部先放进全局等待池（到点后才会分配进医生队列）
+        // 解析所有患者，全部先放进全局等待池和患者队列（到点后才会分配进医生队列）
         for (String line : lines) {
             Patient p = parseLine(line);
             waitingPool.offer(p);
@@ -112,7 +113,7 @@ public class QueueService {
     }
 
     /**
-     * FIX: 计时器——每 5 秒推进 1 分钟模拟时间
+     * 计时器——每 2 秒推进 1 分钟模拟时间
      * 每跳一分钟做三件事：
      *   1) 把已到达时间 <= 当前时间的患者从等待池分配进医生队列
      *   2) 处理治疗：医生当前患者治疗时间到了就离开队列
@@ -135,7 +136,7 @@ public class QueueService {
         return getAllDoctorStatus();
     }
 
-    /** 推进一步模拟（tick 和 addOneFromFile 共用，避免代码重复） */
+    //辅助前面的调试函数的函数
     private void tickOnce() {
         simTime = simTime.plusMinutes(1);
         dispatchArrivedPatients();
@@ -161,6 +162,7 @@ public class QueueService {
     private void insertToDoctor(int doctorIndex, Patient patient) {
         CycleQueue target = queues[doctorIndex];
         if (!target.insertPriority(patient)) {
+            //扩容
             List<Patient> all = target.getAll();
             CycleQueue newQ = new CycleQueue(target.getMaxLength() + all.size() + 10);
             for (Patient p : all) newQ.insertPriority(p);
@@ -170,23 +172,29 @@ public class QueueService {
     }
 
     /**
-     * FIX: 处理治疗——每个医生串行治疗队首患者
+     * 处理治疗——每个医生串行治疗队首患者
      * 队首刚开始治疗时记录结束时间；当前时间到达结束时间后队首离开队列，下一位接着开始
+     * 离开队列的患者不会从 allPatients 删除，并把"到达 → 开始治疗"的实际等待时间定格记录下来
      */
     private void processTreatments() {
         for (int i = 0; i < queues.length; i++) {
             CycleQueue q = queues[i];
+            //空了就记录医生空闲
             if (q.isEmpty()) {
                 doctorBusyUntil[i] = null;
                 continue;
             }
+            //拿第一个人的治疗时间+现在的时间是医生现在的空闲时间
             if (doctorBusyUntil[i] == null) {
                 doctorBusyUntil[i] = simTime.plusMinutes(headPatient(q).getTreatTime());
             }
             while (!q.isEmpty() && !simTime.isBefore(doctorBusyUntil[i])) {
+                // 结束时间 - 治疗耗时 = 该患者实际开始治疗的时间（找开始的时间）
+                LocalTime startAt = doctorBusyUntil[i].minusMinutes(headPatient(q).getTreatTime());
                 Patient done = q.deQueue();
-                // 治疗完成 → 离开队列，也离开排队总表
-                allPatients.removeIf(p -> p.getId() == done.getId());
+                // 记录已诊断患者的 id 与最终等待时间（等待时间定格，不再随时钟变化），开始治疗时间减到达时间
+                done.setTotalWaitTime(minutesBetween(done.getArriveTime(), startAt));
+                done.setCurrentWaitTime(0);
                 if (q.isEmpty()) {
                     doctorBusyUntil[i] = null;
                 } else {
@@ -196,13 +204,20 @@ public class QueueService {
         }
     }
 
-    /** FIX: 手动让指定医生的队首患者立即完成治疗（调试用，正常由计时器自动完成） */
+    /** 手动让指定医生的队首患者立即完成治疗 */
     public synchronized List<QueueStatusVO> completeHead(int doctorIndex) {
-        if (doctorIndex < 0 || doctorIndex >= queues.length) return getAllDoctorStatus();
+        if (doctorIndex < 0 || doctorIndex >= queues.length) return getAllDoctorStatus();//这是有问题的情况
         CycleQueue q = queues[doctorIndex];
         if (!q.isEmpty()) {
-            Patient done = q.deQueue();
-            allPatients.removeIf(p -> p.getId() == done.getId());
+            // 手动治疗完成：同样记录最终等待时间，并保留在全部患者总表中
+            Patient done = headPatient(q);
+            LocalTime finish = doctorBusyUntil[doctorIndex] == null
+                    ? simTime.plusMinutes(done.getTreatTime())
+                    : doctorBusyUntil[doctorIndex];
+            LocalTime startAt = finish.minusMinutes(done.getTreatTime());
+            q.deQueue();
+            done.setTotalWaitTime(minutesBetween(done.getArriveTime(), startAt));
+            done.setCurrentWaitTime(0);
             doctorBusyUntil[doctorIndex] = q.isEmpty()
                     ? null
                     : simTime.plusMinutes(headPatient(q).getTreatTime());
@@ -252,20 +267,21 @@ public class QueueService {
     }
 
     /**
-     * 全局平均等待时间——所有仍在排队患者（医生队列 + 等待池）的"即时等待时间"总平均
+     * 全局平均等待时间——全部患者（含已治疗完成）的"总体等待时间"总平均
      */
     public synchronized double getAvgWaitTime() {
         updateCurrentWaitTimes();
         int sum = 0;
         int count = 0;
         for (Patient p : allPatients) {
-            sum += p.getCurrentWaitTime();
+            // FIX: 平均值按"总体等待时间"计算（原先用的是即时等待时间）
+            sum += p.getTotalWaitTime();
             count++;
         }
         return count > 0 ? (double) sum / count : 0;
     }
 
-    /** 给 HeapService 用——返回所有仍在排队的患者快照（医生队列 + 等待池） */
+    /** 给 HeapService 用——返回全部患者快照（医生队列 + 等待池 + 已治疗完成） */
     public synchronized List<Patient> getAllPatientsSnapshot() {
         updateCurrentWaitTimes();
         return new ArrayList<>(allPatients);
@@ -396,10 +412,11 @@ public class QueueService {
 
     /** 找当前"总治疗时间最短"的医生队列 */
     private int findMinTreatTimeQueue() {
-        int minTime = Integer.MAX_VALUE;
-        int minIdx = 0;
+        int minTime = Integer.MAX_VALUE;//记最小时长
+        int minIdx = 0;//记最小时长对应的医生
         for (int i = 0; i < queues.length; i++) {
             int total = 0;
+            //看医生队列里目前的总治疗时长
             for (Patient p : queues[i].getAll()) {
                 total += p.getTreatTime();
             }
