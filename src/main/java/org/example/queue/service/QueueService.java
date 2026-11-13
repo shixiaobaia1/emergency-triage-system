@@ -129,21 +129,6 @@ public class QueueService {
         updateCurrentWaitTimes();
     }
 
-    /** 手动推进一分钟（调试用，正常由计时器自动推进） */
-    public synchronized List<QueueStatusVO> addOneFromFile() {
-        if (!running) return getAllDoctorStatus();
-        tickOnce();
-        return getAllDoctorStatus();
-    }
-
-    //辅助前面的调试函数的函数
-    private void tickOnce() {
-        simTime = simTime.plusMinutes(1);
-        dispatchArrivedPatients();
-        processTreatments();
-        updateCurrentWaitTimes();
-    }
-
     /**
      * 把"到达时间 <= 当前模拟时间"的患者从等待池分配进医生队列
      */
@@ -211,13 +196,16 @@ public class QueueService {
         if (!q.isEmpty()) {
             // 手动治疗完成：同样记录最终等待时间，并保留在全部患者总表中
             Patient done = headPatient(q);
-            LocalTime finish = doctorBusyUntil[doctorIndex] == null
-                    ? simTime.plusMinutes(done.getTreatTime())
-                    : doctorBusyUntil[doctorIndex];
-            LocalTime startAt = finish.minusMinutes(done.getTreatTime());
+            // 实际开始治疗时刻——如果已经在治的就用"原定结束时间 - 原治疗时长"反推；还没开始的就算此刻是治疗时间也是结束时间
+            LocalTime startAt = doctorBusyUntil[doctorIndex] == null//这是存本来这个患者什么时候结束
+                    ? simTime
+                    : doctorBusyUntil[doctorIndex].minusMinutes(done.getTreatTime());
             q.deQueue();
+            // 治疗时长为"开始治疗 → 点击完成"实际经过的分钟数
+            done.setTreatTime(minutesBetween(startAt, simTime));
             done.setTotalWaitTime(minutesBetween(done.getArriveTime(), startAt));
             done.setCurrentWaitTime(0);
+            //新的患者上来
             doctorBusyUntil[doctorIndex] = q.isEmpty()
                     ? null
                     : simTime.plusMinutes(headPatient(q).getTreatTime());
@@ -242,8 +230,13 @@ public class QueueService {
             removed = waitingPool.removeIf(p -> p.getId() == patientId);
         }
         if (removed) {
-            allPatients.removeIf(p -> p.getId() == patientId);
-            // FIX: 有患者放弃 → 受影响患者的总体等待时间要重算
+            //放弃排队也留档——等待时间定格为"放弃时间 - 到达时间"，并保留在全部患者总表中，
+            Patient quit = allPatients.stream().filter(p -> p.getId() == patientId).findFirst().orElse(null);
+            if (quit != null) {
+                quit.setTotalWaitTime(minutesBetween(quit.getArriveTime(), simTime));
+                quit.setCurrentWaitTime(0);
+            }
+            //有患者放弃 → 受影响患者的总体等待时间要重算
             recalcTotalWaitTime();
             updateCurrentWaitTimes();
         }
@@ -274,14 +267,14 @@ public class QueueService {
         int sum = 0;
         int count = 0;
         for (Patient p : allPatients) {
-            // FIX: 平均值按"总体等待时间"计算（原先用的是即时等待时间）
             sum += p.getTotalWaitTime();
             count++;
         }
+        //确定当前到底有多少个患者
         return count > 0 ? (double) sum / count : 0;
     }
 
-    /** 给 HeapService 用——返回全部患者快照（医生队列 + 等待池 + 已治疗完成） */
+    /** 给 HeapService 用——返回全部患者快照 */
     public synchronized List<Patient> getAllPatientsSnapshot() {
         updateCurrentWaitTimes();
         return new ArrayList<>(allPatients);
@@ -302,80 +295,129 @@ public class QueueService {
         return waitingPool.size();
     }
 
-    /** FIX: 当前模拟时间（HH:mm），方便前端/调试看时钟走到哪了 */
+    /** 当前模拟时间（HH:mm），方便前端/调试看时钟走到哪了 */
     public synchronized String getSimTime() {
         return simTime.format(HH_MM);
     }
 
-    // ========== 私有方法 ==========
-
     /**
-     * FIX: 预计每位患者的"总体等待时间"（到达时间 → 预计真正就诊时间）
+     * 预计每位患者的"总体等待时间"（到达时间 → 预计真正就诊时间）
      *
-     * 核心公式：
+     * 【核心公式】
      *   预计就诊时刻 = max(患者到达时间, 医生空闲时刻)
      *   总体等待时间 = 预计就诊时刻 - 患者到达时间
-     * 每安排一个人后：医生空闲时刻 = 该患者预计开始时刻 + 他的治疗时长
+     *   安排完一个人后：医生空闲时刻 = 该患者预计开始时刻 + 他的治疗时长
      *
-     * 分两批算：
-     *   ① 已在医生队列里的患者——排位已固定，按队列顺序依次累加，不能插队重排
-     *   ② 还在等待池里的患者——还没分配医生，按"到达时间升序 + 同时到优先级小的先"排序后，
-     *      逐个挑当前空闲最早的医生（贪心预测，只算时间，不真的入队）
+     *   医生队列里的患者：排位已经固定，只能按队列顺序一个接一个往后排，不能重新调换顺序
+     *   等待池里的患者：还没分配医生，需要预测"将来会被分给哪位医生"，所以要重新模拟一次调度
+     *
+     * 【第一批：已在医生队列里的患者】
+     *   对每一位医生：
+     *     1) 先确定这位医生的"空闲起点" free
+     *        - 一般情况 free = 当前模拟时间
+     *        - 如果医生手上有患者正在治疗，free = 那位患者的预计结束时间
+     *     2) 按队列顺序（front → rear）一位一位往后推：
+     *        - 普通患者：开始时刻 = max(他自己的到达时间, free)
+     *          （人还没到就等到达；已经到了就等医生空出来）
+     *        - 队首且正在治疗：开始时刻 = 预计结束时间 - 治疗时长
+     *          （他已经在治了，如果把"结束时间"当成"开始时间"，等待时间会多算一个治疗时长）
+     *        - 算完一个人，free 更新为"他开始时刻 + 他的治疗时长"，再算下一位
+     *     3) 该医生队列排完，free 的值就是这位医生预计什么时候彻底空闲，存入 doctorFree[]
+     *
+     * 【第二批：还在等待池里的患者】
+     *   1) 先把等待池复制一份并排序：到达时间早的在前；到达时间相同的，优先级数字小的在前
+     *   2) 依次处理每位患者：
+     *      - 在 doctorFree[] 里挑"预计空闲最早"的医生（贪心：谁最早空就给谁）
+     *      - 该患者开始时刻 = max(他的到达时间, 这位医生的空闲时刻)
+     *      - 算完后把这位医生的空闲时刻往后推：开始时刻 + 他的治疗时长
+     *   3) 注意：这里只是"预测"，不会真的把患者塞进医生队列；
+     *      真正入队发生在 dispatchArrivedPatients()，即患者到达时间到了才执行
      */
     private void recalcTotalWaitTime() {
+        // doctorFree[i] 记录第 i 位医生"预计什么时候彻底空闲"，留给第二批（等待池）预测用
         LocalTime[] doctorFree = new LocalTime[queues.length];
         for (int i = 0; i < queues.length; i++) {
+            // free = 这位医生的"空闲起点"，默认从现在开始
             LocalTime free = simTime;
+            // 如果医生手上有人正在治疗，就从那位患者的预计结束时刻开始算
             if (doctorBusyUntil[i] != null && doctorBusyUntil[i].isAfter(free)) {
                 free = doctorBusyUntil[i];
             }
             // 队列里已有的患者依次占用医生时间
+            boolean first = true;      // 标记当前遍历到的是不是队首
             for (Patient p : queues[i].getAll()) {
-                LocalTime start = p.getArriveTime().isAfter(free) ? p.getArriveTime() : free;
+                LocalTime start;
+                if (first && doctorBusyUntil[i] != null) {
+                    // 队首已经在治疗，开始时刻 = 预计治完时刻 - 治疗时长，不能再按"治完时刻"往后推
+                    start = doctorBusyUntil[i].minusMinutes(p.getTreatTime());
+                } else {
+                    // 普通患者：自己到了才可能开始（取到达时间）；到了就等医生空出来（取 free）
+                    start = p.getArriveTime().isAfter(free) ? p.getArriveTime() : free;
+                }
+                // 总体等待时间 = 开始治疗时刻 - 到达时间
                 p.setTotalWaitTime(minutesBetween(p.getArriveTime(), start));
+                // 这个人治完后医生才有空：空闲时刻 = 开始时刻 + 他的治疗时长
                 free = start.plusMinutes(p.getTreatTime());
+                first = false;
             }
+            // 该医生队列全部排完，free 就是这位医生预计彻底空闲的时刻
             doctorFree[i] = free;
         }
         // 等待池里的患者：按到达时间升序、同到达按优先级升序，逐个分给预计空闲最早的医生
-        List<Patient> pool = new ArrayList<>(waitingPool);
+        List<Patient> pool = new ArrayList<>(waitingPool);   // 复制一份，不影响真正的等待池
         pool.sort(Comparator.comparing(Patient::getArriveTime).thenComparing(Patient::getPriority));
         for (Patient p : pool) {
-            int idx = 0;
+            int idx = 0;      // 预计空闲最早的医生下标
             for (int i = 1; i < doctorFree.length; i++) {
-                if (doctorFree[i].isBefore(doctorFree[idx])) idx = i;
+                if (doctorFree[i].isBefore(doctorFree[idx])) idx = i;   // 发现更早空闲的就换人
             }
+            // 他开始就诊的时刻 = max(他的到达时间, 这位医生的空闲时刻)
             LocalTime start = p.getArriveTime().isAfter(doctorFree[idx]) ? p.getArriveTime() : doctorFree[idx];
             p.setTotalWaitTime(minutesBetween(p.getArriveTime(), start));
+            // 把这位医生的空闲时刻往后推，供下一位等待池患者继续预测
             doctorFree[idx] = start.plusMinutes(p.getTreatTime());
         }
     }
 
     /**
-     * FIX: 重算每位患者的"即时等待时间"（当前这一刻还要等多久才能就诊）
+     * 重算每位患者的"即时等待时间"（当前这一刻还要等多久才真正就诊）
      *
-     * 医生队列内：
-     *   队首正在治疗 → 0
-     *   第 k 位（k >= 1）= 队首剩余治疗时间 + 第 1..k-1 位的治疗时长之和
+     * 【和上面"总体等待时间"的区别】
+     *   总体等待时间：从"到达时间"算到"预计真正就诊"，是个基准值，只在加载/有人放弃时重算
+     *   即时等待时间：从"现在"算到"预计真正就诊"，每跳一分钟都会重算一次，数值不断变小
      *
-     * 等待池内：
-     *   还没到点 → 距离到达还有几分钟 + 总体等待时间
-     *   已到点   → 总体等待时间 - 已经等了多久（不小于 0）
+     * 【医生队列内】offset 表示队首还要治多久（= 队首结束时间 - 当前时间；医生空闲时为 0）
+     *   队首（k == 0）：正在治疗 → 0（已经轮到他了，不用再等）
+     *   第 k 位（k >= 1）：offset + 第 1..k-1 位的治疗时长之和
+     *     含义：先等队首治完，再等排在自己前面的那些人依次治完
+     *     举例：队首还剩 5 分钟，第 2 位自己前面没人
+     *           → 第 2 位还要等 5 分钟
+     *           若还有第 3 位、第 2 位要治 10 分钟
+     *           → 第 3 位还要等 5 + 10 = 15 分钟
+     *
+     * 【等待池内】
+     *   ① 还没到点（到达时间 > 当前时间）：
+     *        还要等 "距离到达的分钟数" + "总体等待时间"
+     *        例：09:00 到、现在 08:50、总体等待 20 分钟 → 10 + 20 = 30 分钟后才看上
+     *   ② 已经到点（到达时间 <= 当前时间）：
+     *        "总体等待时间" - "已经等了多久"，结果不小于 0
+     *        例：总体等待 20 分钟、从到达起已经等了 8 分钟 → 还要再等 12 分钟
      */
     private void updateCurrentWaitTimes() {
         // 医生队列内：队首正在治疗 → 0；后面每位 = 前面所有人剩余治疗时间之和
         for (int i = 0; i < queues.length; i++) {
             List<Patient> list = queues[i].getAll();
-            if (list.isEmpty()) continue;
-            int offset = 0;
+            if (list.isEmpty()) continue;      // 这位医生队列是空的，不用算
+            int offset = 0;                    // 队首还要治疗多久；医生空闲时为 0
             if (doctorBusyUntil[i] != null && doctorBusyUntil[i].isAfter(simTime)) {
                 offset = minutesBetween(simTime, doctorBusyUntil[i]);
             }
             for (int k = 0; k < list.size(); k++) {
                 Patient p = list.get(k);
                 if (k == 0) {
-                    p.setCurrentWaitTime(0);
+                    p.setCurrentWaitTime(0);   // 队首正在治疗，已经轮到他，不用再等
                 } else {
+                    // 第 k 位 = 先等队首治完 + 再等排在他前面的 1..k-1 位依次治完
                     p.setCurrentWaitTime(offset + sumTreatTime(list, 1, k));
                 }
             }
@@ -383,8 +425,10 @@ public class QueueService {
         // 等待池内：还没到点的 = 到点前的分钟数 + 总体等待时间；已到点的 = 预计总等待剩余
         for (Patient p : waitingPool) {
             if (p.getArriveTime().isAfter(simTime)) {
+                // 还没到的：先等"距离到达的时间"，到点后还要按总体等待时间继续等
                 p.setCurrentWaitTime(minutesBetween(simTime, p.getArriveTime()) + p.getTotalWaitTime());
             } else {
+                // 已经到的：总体等待时间减去已经等掉的时长，结果不小于 0
                 int elapsed = minutesBetween(p.getArriveTime(), simTime);
                 p.setCurrentWaitTime(Math.max(0, p.getTotalWaitTime() - elapsed));
             }

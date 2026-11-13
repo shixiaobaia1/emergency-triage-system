@@ -22,9 +22,11 @@ public class HeapService {
 
     //拿当前队列，按等待时间做大根堆排序
     public synchronized PatientVO[] heapSortByWaitTime() {
+        //拿所有患者的List
         List<Patient> snapshot = queueService.getAllPatientsSnapshot();
         if(snapshot.isEmpty()) return new PatientVO[0];
         Patient[] arr = snapshot.toArray(new Patient[0]);
+        //转成循环队列
         CycleQueue tmpQueue = new CycleQueue(arr.length);
         for(Patient p : arr) tmpQueue.insertPriority(p);
         //弄个循环队列数组进参数里
@@ -48,7 +50,6 @@ public class HeapService {
         v.setArriveTime(p.getArriveTime().format(HH_MM));  //按格式返回VO里
         v.setTreatTime(p.getTreatTime());
         v.setPriority(p.getPriority());
-        // FIX: 输出两个等待时间
         v.setTotalWaitTime(p.getTotalWaitTime());
         v.setCurrentWaitTime(p.getCurrentWaitTime());
         return v;

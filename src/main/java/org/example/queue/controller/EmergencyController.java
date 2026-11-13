@@ -36,37 +36,31 @@ public class EmergencyController {
         return Result.success(queueService.getStatus());
     }
 
-    /** FIX: 查看所有医生队列的状态（数量由最近一次 load 的 doctorCount 决定） */
+    /** 查看所有医生队列的状态（数量由最近一次 load 的 doctorCount 决定） */
     @GetMapping("/status")
     public Result<List<QueueStatusVO>> getStatus() {
         return Result.success(queueService.getStatus());
     }
 
-    /** FIX: 查看指定医生的队列状态（index 从 0 到 医生人数-1） */
+    /**  查看指定医生的队列状态（index 从 0 到 医生人数-1） */
     @GetMapping("/doctors/{index}")
     public Result<QueueStatusVO> getDoctorStatus(@PathVariable int index) {
         return Result.success(queueService.getDoctorStatus(index));
     }
 
-    /** FIX: 手动推进一分钟（调试用，正常由 5 秒一跳的计时器自动推进） */
-    @PostMapping("/add")
-    public Result<List<QueueStatusVO>> addOne() {
-        return Result.success(queueService.addOneFromFile());
-    }
-
-    /** FIX: 手动让指定医生队首患者立即完成治疗（调试用，正常由计时器自动完成） */
+    /** 手动让指定医生队首患者立即完成治疗 */
     @GetMapping("/treat")
     public Result<List<QueueStatusVO>> treatNext(@RequestParam(defaultValue = "0") int doctorIndex) {
         return Result.success(queueService.completeHead(doctorIndex));
     }
 
-    /** FIX: 查看当前模拟时间（从 08:00 开始，每 5 秒跳 1 分钟） */
+    /** 查看当前模拟时间（从 08:00 开始，每 2秒跳 1 分钟） */
     @GetMapping("/now")
     public Result<String> now() {
         return Result.success(queueService.getSimTime());
     }
 
-    /** FIX: 全局平均等待时间——所有仍在排队患者的"即时等待时间"总平均 */
+    /** 全局平均等待时间——所有仍在排队患者的"总体等待时间"总平均 */
     @GetMapping("/avg")
     public Result<Double> getAvgTime() {
         return Result.success(queueService.getAvgWaitTime());
@@ -90,15 +84,12 @@ public class EmergencyController {
         return Result.success(queueService.giveUp(id));
     }
 
-    // ========== 第二阶段：大根堆排序 ==========
-
     /** FIX: 堆排序基于所有医生队列合起来的全部患者 */
     @GetMapping("/sort")
     public Result<PatientVO[]> heapSort() {
         return Result.success(heapService.heapSortByWaitTime());
     }
 
-    // ===== 权限辅助方法 =====
 
     private boolean isAdmin() {
         User user = UserContext.get();
